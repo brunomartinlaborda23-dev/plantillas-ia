@@ -1,7 +1,9 @@
 // Controles táctiles (volante, pedales, marcha) y de teclado.
 import { clamp } from './physics.js';
 
-const MAX_ROT = 450; // grados de volante hasta el tope
+const MAX_ROT = 300; // grados de volante hasta el tope (menos de una vuelta: cómodo con el dedo)
+// Los pedales no saltan de 0 a 100 %: suben y bajan progresivamente (por segundo).
+const PEDAL_UP = 2.6, PEDAL_DOWN = 6, BRAKE_UP = 4;
 
 export class Controls {
   constructor() {
@@ -21,7 +23,8 @@ export class Controls {
   }
 
   reset() {
-    this.gas = this.brk = this.hand = false;
+    this.gas = this.brk = this.hand = this.btnL = this.btnR = false;
+    this.thr = this.brkVal = 0;
     this.wheelRot = 0;
     this.wheelHeld = false;
     this.keys = {};
@@ -33,7 +36,7 @@ export class Controls {
     this.onGear?.(g);
   }
 
-  bind({ wheel, gas, brake, hand, gear }) {
+  bind({ wheel, gas, brake, hand, gear, left, right }) {
     const hold = (el, prop) => {
       el.addEventListener('pointerdown', e => {
         e.preventDefault();
@@ -49,6 +52,8 @@ export class Controls {
     hold(gas, 'gas');
     hold(brake, 'brk');
     hold(hand, 'hand');
+    hold(left, 'btnL');
+    hold(right, 'btnR');
 
     gear.addEventListener('pointerdown', e => {
       e.preventDefault();
@@ -75,6 +80,7 @@ export class Controls {
       this.wheelRot = clamp(this.wheelRot + d, -MAX_ROT, MAX_ROT);
     });
     const release = () => { this.wheelHeld = false; };
+    // Al soltar el volante vuelve al centro él solo (ver update).
     wheel.addEventListener('pointerup', release);
     wheel.addEventListener('pointercancel', release);
     wheel.addEventListener('lostpointercapture', release);
@@ -85,25 +91,30 @@ export class Controls {
     const k = this.keys;
     const left = k.ArrowLeft || k.KeyA, right = k.ArrowRight || k.KeyD;
     const up = k.ArrowUp || k.KeyW, down = k.ArrowDown || k.KeyS;
-    const kb = (left ? 1 : 0) - (right ? 1 : 0);
+    const kb = (left || this.btnL ? 1 : 0) - (right || this.btnR ? 1 : 0);
 
     if (!this.wheelHeld) {
-      const rate = (kb ? 700 : 900) * dt;
-      this.wheelRot += clamp(-kb * MAX_ROT - this.wheelRot, -rate, rate);
+      // Teclas y botones: a más velocidad, menos giro máximo y más suave (como la dirección real).
+      const sp = Math.abs(v);
+      const reach = 1 / (1 + sp / 9);
+      const rate = (kb ? 520 / (1 + sp / 12) : 480) * dt;
+      this.wheelRot += clamp(-kb * MAX_ROT * reach - this.wheelRot, -rate, rate);
     }
 
-    let throttle = this.gas ? 1 : 0, brake = this.brk ? 1 : 0;
+    let gas = this.gas, brk = this.brk;
     // Con teclado la marcha cambia sola: adelante = D, atrás = R.
     if (up) {
-      if (this.gear === 1) throttle = 1;
-      else if (v < -0.3) brake = 1;
-      else { this.setGear(1); throttle = 1; }
+      if (this.gear === 1) gas = true;
+      else if (v < -0.3) brk = true;
+      else { this.setGear(1); gas = true; }
     }
     if (down) {
-      if (this.gear === -1) throttle = 1;
-      else if (v > 0.3) brake = 1;
-      else { this.setGear(-1); throttle = 1; }
+      if (this.gear === -1) gas = true;
+      else if (v > 0.3) brk = true;
+      else { this.setGear(-1); gas = true; }
     }
-    return { throttle, brake, steer: -this.wheelRot / MAX_ROT, handbrake: this.hand || !!k.Space };
+    this.thr = gas ? Math.min(1, this.thr + PEDAL_UP * dt) : Math.max(0, this.thr - PEDAL_DOWN * dt);
+    this.brkVal = brk ? Math.min(1, this.brkVal + BRAKE_UP * dt) : 0;
+    return { throttle: this.thr, brake: this.brkVal, steer: -this.wheelRot / MAX_ROT, handbrake: this.hand || !!k.Space };
   }
 }

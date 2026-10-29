@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "start": "npx http-server www -p 8080 -c-1",
-    "test": "node tests/levels.test.mjs",
+    "test": "node tests/levels.test.mjs && node tests/driving.test.mjs",
     "ios:add": "npx cap add ios",
     "ios:icons": "npx @capacitor/assets generate --ios",
     "ios:sync": "npx cap sync ios",

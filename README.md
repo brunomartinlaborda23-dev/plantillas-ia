@@ -20,8 +20,12 @@ Hecho con **Three.js** (gráficos 3D) y empaquetado para iOS con **Capacitor**. 
   | **Vector CS** | 4.000 | 550 CV | 3,4 s | BMW M4 CS |
   | **Strada RS** | 6.000 | 525 CV | 3,2 s | Porsche 911 GT3 RS |
   | **Fulmine HY** | 10.000 | 963 CV | 2,6 s | Ferrari LaFerrari |
-- **Controles táctiles** como en los juegos de parking: volante giratorio, pedales de gas y freno,
-  marcha D/R y freno de mano. En ordenador: flechas/WASD, espacio (freno de mano), C (cámara), Esc (pausa).
+- **Controles táctiles** como en los juegos de parking: volante giratorio (o botones ◀ ▶, se elige en
+  el menú con "🎮 Dirección"), pedales de gas y freno progresivos, marcha D/R y freno de mano.
+  En ordenador: flechas/WASD, espacio (freno de mano), C (cámara), Esc (pausa).
+- **Conducción**: física a paso fijo (120 Hz), giro sobre el eje trasero, dirección que se suaviza con la
+  velocidad, derrape con el freno de mano a más de 15 km/h, y en la ciudad el coche resbala a lo largo de
+  las paredes en lugar de quedarse clavado.
 - **Realismo**: modelos 3D con carrocería curva, pasos de rueda, llantas con radios, discos y pinzas de freno;
   pintura con barniz y reflejos del entorno; la carrocería se inclina al frenar, acelerar y girar;
   caja de cambios automática con sonido de motor según las revoluciones (cada coche suena distinto);
@@ -65,7 +69,7 @@ activar el modo sin choques, darte todas las piezas del taller y reiniciar la pa
 
 ```bash
 npm start          # abre http://localhost:8080
-npm test           # verifica que todos los niveles son jugables
+npm test           # verifica que todos los niveles son jugables y la física de conducción
 ```
 
 ## Publicarlo en la App Store (paso a paso)

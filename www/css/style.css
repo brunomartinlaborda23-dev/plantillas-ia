@@ -266,3 +266,8 @@ html, body {
 @media (orientation: landscape) {
   #tuning .garage-bottom { width: 360px; justify-content: flex-start; }
 }
+
+/* Dirección con botones (alternativa al volante) */
+#steerBtns { position: absolute; left: calc(16px + var(--safe-l)); bottom: calc(16px + var(--safe-b)); display: flex; gap: 12px; }
+.pedal.steer { width: 86px; height: 86px; font-size: 30px; pointer-events: auto; }
+@media (max-height: 500px) { .pedal.steer { width: 74px; height: 74px; } }

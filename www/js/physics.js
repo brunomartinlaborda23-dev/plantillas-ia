@@ -73,37 +73,60 @@ export function carObb(c, spec) {
   return { x: c.x, z: c.z, a: c.a, hw: spec.w / 2, hl: spec.l / 2 };
 }
 
+// Paso fijo de la física: el coche se comporta igual a 30 que a 120 fps.
+export const PHYS_DT = 1 / 120;
+
 // Avanza el coche dt segundos. inp = { throttle, brake, steer (-1..1, + = izquierda), handbrake }.
+// Estado: v = velocidad hacia delante, vl = velocidad lateral (derrape), steer = ángulo de ruedas.
 export function stepCar(c, inp, s, dt) {
+  const sp = Math.abs(c.v);
+  const drifting = !!inp.handbrake && sp > 4;
   let target = clamp(inp.steer, -1, 1) * s.maxSteer;
   // A velocidad, los neumáticos no dan más agarre lateral que `grip` (m/s²): el coche subvira.
-  const v2 = c.v * c.v;
-  if (v2 > 1) {
-    const lim = Math.atan(((s.grip || 9) * s.wb) / v2);
+  // Con el freno de mano echado se permite girar algo más para provocar el derrape.
+  if (sp > 1) {
+    const lim = Math.atan(((s.grip || 9) * (drifting ? 2.2 : 1) * s.wb) / (sp * sp));
     target = clamp(target, -lim, lim);
   }
-  const rate = (s.steerRate || 2.2) * dt;
+  // La dirección gira más despacio cuanto más rápido vas: menos volantazos en recta.
+  const rate = ((s.steerRate || 2.2) / (1 + sp / 14)) * dt;
   c.steer += clamp(target - c.steer, -rate, rate);
 
+  // Motor: empuja con fuerza al salir y pierde empuje cerca de la velocidad máxima.
   let v = c.v;
-  if (inp.throttle > 0) v += c.gear * s.accel * inp.throttle * dt;
-  let dec = 0.7 + 0.004 * v * v;
+  if (inp.throttle > 0) {
+    const top = c.gear > 0 ? s.maxSpeed : s.maxReverse;
+    const moving = Math.sign(v) === c.gear ? Math.min(1, sp / top) : 0;
+    v += c.gear * s.accel * inp.throttle * (1 - 0.75 * moving * moving) * dt;
+  }
+  let dec = 0.6 + 0.0035 * v * v;
   if (inp.brake > 0) dec += s.brake * inp.brake;
-  if (inp.handbrake) dec += s.brake * 1.3;
+  if (inp.handbrake) dec += s.brake * 0.55;
   const dv = dec * dt;
   v = Math.abs(v) <= dv ? 0 : v - Math.sign(v) * dv;
   c.v = clamp(v, -s.maxReverse, s.maxSpeed);
   c.braking = inp.brake > 0 || !!inp.handbrake;
 
-  // Gira alrededor del eje trasero, como un coche real.
+  // Giro alrededor del eje trasero: el centro del coche se mueve de lado a half·yaw.
+  // La velocidad se conserva en el mundo mientras el coche rota; los neumáticos la enderezan
+  // hacia la dirección del coche. Con agarre normal es casi instantáneo; con el freno de mano
+  // a velocidad las ruedas traseras se sueltan y el coche cruza la cola (derrape).
   const half = s.wb / 2;
-  let fx = Math.sin(c.a), fz = Math.cos(c.a);
-  const rx = c.x - fx * half + fx * c.v * dt;
-  const rz = c.z - fz * half + fz * c.v * dt;
-  c.a += (c.v / s.wb) * Math.tan(c.steer) * dt;
-  fx = Math.sin(c.a); fz = Math.cos(c.a);
-  c.x = rx + fx * half;
-  c.z = rz + fz * half;
+  let yaw = (c.v / s.wb) * Math.tan(c.steer);
+  if (drifting) yaw *= 1.4;
+  let fx = Math.sin(c.a), fz = Math.cos(c.a), rx = Math.cos(c.a), rz = -Math.sin(c.a);
+  const wx = fx * c.v + rx * (c.vl || 0), wz = fz * c.v + rz * (c.vl || 0);
+  c.a += yaw * dt;
+  fx = Math.sin(c.a); fz = Math.cos(c.a); rx = Math.cos(c.a); rz = -Math.sin(c.a);
+  c.v = wx * fx + wz * fz;
+  c.vl = wx * rx + wz * rz;
+  const vlTarget = half * yaw;
+  const grip = drifting ? 1.6 : sp > 1 ? 30 : 60;
+  c.vl += (vlTarget - c.vl) * (1 - Math.exp(-grip * dt));
+  c.slip = Math.abs(c.vl - vlTarget);
+
+  c.x += (fx * c.v + rx * c.vl) * dt;
+  c.z += (fz * c.v + rz * c.vl) * dt;
 }
 
 // ¿Está el coche bien aparcado dentro de la plaza?

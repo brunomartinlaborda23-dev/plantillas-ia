@@ -1,7 +1,7 @@
 import * as THREE from '../vendor/three.module.min.js';
 import { CARS, CAR_ORDER, COLORS } from './specs.js';
 import { LEVELS, getFreeMap } from './levels.js';
-import { stepCar, carObb, collides, obstacleDist, parkedIn } from './physics.js';
+import { stepCar, carObb, collides, obstacleDist, parkedIn, PHYS_DT } from './physics.js';
 import { buildCar } from './cars.js';
 import { buildWorld, buildShowroom } from './world.js';
 import { Drivetrain, Suspension, SkidMarks } from './effects.js';
@@ -279,7 +279,9 @@ function setupPlay(data, env) {
   // Los todoterreno se inclinan más; los deportivos, menos.
   G.susp = new Suspension(G.spec.h > 1.6 ? 1.5 : G.spec.hp > 300 ? 0.6 : 1);
   G.skids = new SkidMarks(world);
-  G.car = { x: data.start.x, z: data.start.z, a: data.start.a, v: 0, steer: 0, gear: 1 };
+  G.car = { x: data.start.x, z: data.start.z, a: data.start.a, v: 0, vl: 0, steer: 0, gear: 1 };
+  G.physAcc = 0;
+  G.camHeading = data.start.a;
   G.time = 0;
   G.inSpot = 0;
   G.over = false;
@@ -350,7 +352,22 @@ controls.onGear = g => {
   b.textContent = g === 1 ? 'D' : 'R';
   b.classList.toggle('rev', g === -1);
 };
-controls.bind({ wheel: $('wheel'), gas: $('pedGas'), brake: $('pedBrake'), hand: $('btnHand'), gear: $('btnGear') });
+controls.bind({ wheel: $('wheel'), gas: $('pedGas'), brake: $('pedBrake'), hand: $('btnHand'), gear: $('btnGear'), left: $('btnLeft'), right: $('btnRight') });
+
+// Tipo de dirección táctil: volante o botones ◀ ▶.
+function applyControlMode() {
+  const buttons = save.controls === 'buttons';
+  $('wheel').classList.toggle('hidden', buttons);
+  $('steerBtns').classList.toggle('hidden', !buttons);
+  $('btnControls').textContent = buttons ? '🎮 Dirección: botones' : '🎮 Dirección: volante';
+}
+$('btnControls').onclick = () => {
+  sound.click();
+  save.controls = save.controls === 'buttons' ? 'wheel' : 'buttons';
+  persist();
+  applyControlMode();
+};
+applyControlMode();
 $('btnPause').onclick = () => { sound.click(); pause(); };
 $('btnCam').onclick = () => { sound.click(); cycleCamera(); };
 
@@ -388,7 +405,12 @@ const camPos = new THREE.Vector3();
 const camLook = new THREE.Vector3();
 function updateCamera(dt, snap) {
   const { car } = G;
-  const yaw = car.a + G.camYaw;
+  // El rumbo de la cámara persigue al del coche con algo de retraso: en las curvas se ve
+  // el lateral del coche sin que la cámara se vaya hacia fuera.
+  let dA = car.a - G.camHeading;
+  dA = Math.atan2(Math.sin(dA), Math.cos(dA));
+  G.camHeading = snap ? car.a : G.camHeading + dA * Math.min(1, dt * 3.5);
+  const yaw = G.camHeading + G.camYaw;
   const fx = Math.sin(yaw), fz = Math.cos(yaw);
   const cfx = Math.sin(car.a), cfz = Math.cos(car.a);
   switch (G.camMode) {
@@ -404,11 +426,34 @@ function updateCamera(dt, snap) {
     camPos.x = Math.min(Math.max(camPos.x, b.minX + 0.6), b.maxX - 0.6);
     camPos.z = Math.min(Math.max(camPos.z, b.minZ + 0.6), b.maxZ - 0.6);
   }
-  const k = snap || G.camMode === 3 ? 1 : 1 - Math.exp(-dt * 6);
+  const k = snap || G.camMode === 3 ? 1 : 1 - Math.exp(-dt * 10);
   camera.position.lerp(camPos, k);
   camera.lookAt(camLook);
+  // Algo más de campo de visión a mucha velocidad: sensación de velocidad.
+  const fov = 60 + Math.min(12, Math.abs(car.v) * 0.35);
+  if (Math.abs(camera.fov - fov) > 0.05) { camera.fov += (fov - camera.fov) * Math.min(1, dt * 3); camera.updateProjectionMatrix(); }
   sun.position.set(car.x + 25, 45, car.z + 15);
   sun.target.position.set(car.x, 0, car.z);
+}
+
+function firstHit(car, spec, obstacles) {
+  const obb = carObb(car, spec);
+  for (const o of obstacles) if (collides(obb, o)) return o;
+  return null;
+}
+
+// Prueba a conservar solo el movimiento en X o solo en Z (con el nuevo rumbo o con el anterior).
+function slideAlong(car, prev, spec, obstacles) {
+  const next = { x: car.x, z: car.z, a: car.a };
+  for (const t of [
+    { x: next.x, z: prev.z, a: next.a }, { x: prev.x, z: next.z, a: next.a },
+    { x: next.x, z: prev.z, a: prev.a }, { x: prev.x, z: next.z, a: prev.a },
+  ]) {
+    Object.assign(car, t);
+    if (!firstHit(car, spec, obstacles)) return true;
+  }
+  Object.assign(car, next);
+  return false;
 }
 
 function updatePlay(dt) {
@@ -417,16 +462,33 @@ function updatePlay(dt) {
   car.gear = controls.gear;
   if (G.over) { inp.throttle = 0; inp.handbrake = true; }
 
-  const prev = { x: car.x, z: car.z, a: car.a };
   const v0 = car.v;
-  stepCar(car, inp, spec, dt);
-  const obb = carObb(car, spec);
-  let hit = null;
-  for (const o of data.obstacles) if (collides(obb, o)) { hit = o; break; }
-  if (hit) {
-    const impact = Math.abs(car.v);
+  // Física a paso fijo (varios pasos pequeños por fotograma): mismo comportamiento con
+  // cualquier fps y sin atravesar muros finos a mucha velocidad.
+  G.physAcc = Math.min((G.physAcc || 0) + dt, 0.1);
+  let hit = null, impact = 0;
+  while (G.physAcc >= PHYS_DT && !hit) {
+    G.physAcc -= PHYS_DT;
+    const prev = { x: car.x, z: car.z, a: car.a, vl: car.vl };
+    stepCar(car, inp, spec, PHYS_DT);
+    hit = firstHit(car, spec, data.obstacles);
+    if (!hit) continue;
+    impact = Math.abs(car.v);
+    // En la ciudad, el coche resbala a lo largo de la pared en lugar de quedarse clavado.
+    if (G.mode === 'free' && slideAlong(car, prev, spec, data.obstacles)) {
+      car.v *= 0.995;
+      car.vl *= 0.5;
+      if (impact > 6 && !G.scrapeT) { sound.crash(); G.scrapeT = 0.6; }
+      hit = null;
+      continue;
+    }
     Object.assign(car, prev);
     car.v = -car.v * 0.25;
+    car.vl = 0;
+  }
+  G.scrapeT = Math.max(0, (G.scrapeT || 0) - dt);
+  const obb = carObb(car, spec);
+  if (hit) {
     G.susp.kick(impact * 0.08 * Math.sign(v0));
     if (G.mode === 'level' && !G.over && !save.god) {
       const what = { car: 'Has golpeado un coche aparcado.', cone: 'Has derribado un cono.', pillar: 'Has golpeado una columna.' }[hit.type] || 'Has golpeado un muro.';
@@ -504,9 +566,10 @@ function updateDynamics(dt, inp, longAcc) {
   // Derrape: curva al límite de agarre, frenazo fuerte o freno de mano a velocidad.
   const sp = Math.abs(car.v);
   const corner = Math.max(0, (Math.abs(latAcc) - spec.grip * 0.8) / (spec.grip * 0.2));
-  const braking = inp.brake > 0 && sp > 6 ? 0.5 : 0;
+  const braking = inp.brake > 0.8 && sp > 6 ? 0.5 : 0;
   const hand = inp.handbrake && sp > 3 ? 1 : 0;
-  const slip = G.over ? 0 : Math.min(1, Math.max(corner, braking, hand));
+  const drift = Math.min(1, (car.slip || 0) / 2.5);
+  const slip = G.over ? 0 : Math.min(1, Math.max(corner, braking, hand, drift));
   sound.squeal(slip);
   const fx = Math.sin(car.a), fz = Math.cos(car.a), rx = Math.cos(car.a), rz = -Math.sin(car.a);
   const half = spec.w / 2 - 0.15;

@@ -27,6 +27,7 @@
       <button class="btn big" id="btnFree">🏙️ Ciudad libre</button>
       <button class="btn big" id="btnGarage">🚗 Garaje</button>
       <button class="btn small ghost" id="btnSound">🔊 Sonido</button>
+      <button class="btn small ghost" id="btnControls">🎮 Controles</button>
     </div>
   </div>
 
@@ -107,6 +108,11 @@
         <circle cx="50" cy="50" r="6" fill="#ffb400"/>
         <rect x="47" y="2" width="6" height="10" rx="2" fill="#ffb400"/>
       </svg>
+    </div>
+
+    <div id="steerBtns" class="hidden">
+      <button class="pedal steer" id="btnLeft" aria-label="Girar a la izquierda">◀</button>
+      <button class="pedal steer" id="btnRight" aria-label="Girar a la derecha">▶</button>
     </div>
 
     <div id="speedo"><span id="spd">0</span><small>km/h · <b id="gearTxt">D1</b></small><div id="rpmBar"><div></div></div></div>
