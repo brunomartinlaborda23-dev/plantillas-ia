@@ -31,6 +31,16 @@ Hecho con **Three.js** (gráficos 3D) y empaquetado para iOS con **Capacitor**. 
   luces de freno y marcha atrás, 4 cámaras (y arrastrar en pantalla para girar la vista).
 - Estrellas según el tiempo, monedas, progreso guardado en el dispositivo, sonidos sintetizados.
 
+## Modo admin
+
+Toca **5 veces seguidas el título** "PARKING PRO 3D" del menú (o abre el juego con `#admin` al final del
+enlace) e introduce el PIN. **El PIN inicial es `1234`**: cámbialo desde el propio panel.
+Desde el panel puedes sumar monedas, darte todos los coches, desbloquear todos los niveles con 3 estrellas,
+activar el modo sin choques y reiniciar la partida.
+
+> El PIN se guarda en el dispositivo y protege el panel de jugadores normales, pero no es seguridad real:
+> alguien con conocimientos técnicos podría saltárselo. Para un juego sin compras con dinero real es suficiente.
+
 ## Probarlo en el navegador
 
 ```bash

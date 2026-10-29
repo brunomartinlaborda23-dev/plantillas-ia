@@ -112,6 +112,42 @@
     </div>
   </div>
 
+  <!-- Modo admin: se abre tocando 5 veces el título del menú -->
+  <div id="admin" class="hidden">
+    <div class="card admin-card">
+      <div id="adminLock">
+        <h2>Modo admin</h2>
+        <p class="admin-note">Introduce el PIN de administrador</p>
+        <input id="adminPin" type="password" inputmode="numeric" maxlength="8" autocomplete="off" aria-label="PIN">
+        <p id="adminErr" class="admin-err"></p>
+        <div class="admin-row">
+          <button class="btn" id="adminCancel">Cancelar</button>
+          <button class="btn primary" id="adminEnter">Entrar</button>
+        </div>
+      </div>
+      <div id="adminBody" class="hidden">
+        <h2>Panel de admin</h2>
+        <p id="adminStatus" class="admin-note"></p>
+        <div class="admin-grid">
+          <button class="btn" data-admin="add10k">+10.000 monedas</button>
+          <button class="btn" data-admin="add100k">+100.000 monedas</button>
+          <button class="btn" data-admin="million">Poner 1.000.000</button>
+          <button class="btn" data-admin="cars">Dar todos los coches</button>
+          <button class="btn" data-admin="levels">Desbloquear niveles ★★★</button>
+          <button class="btn" data-admin="god" id="adminGod"></button>
+        </div>
+        <div class="admin-row">
+          <input id="adminNewPin" type="password" inputmode="numeric" maxlength="8" autocomplete="off" placeholder="Nuevo PIN" aria-label="Nuevo PIN">
+          <button class="btn" id="adminSavePin">Cambiar PIN</button>
+        </div>
+        <div class="admin-row">
+          <button class="btn danger" id="adminReset">Reiniciar partida</button>
+          <button class="btn primary" id="adminClose">Cerrar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="toast"></div>
 
   <script type="module" src="js/main.js"></script>

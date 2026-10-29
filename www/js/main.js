@@ -280,7 +280,7 @@ function setupPlay(data, env) {
   G.collected = 0;
   G.state = 'play';
   controls.reset();
-  $('hint').textContent = data.hint;
+  $('hint').textContent = (save.god && G.mode === 'level' ? 'Sin choques · ' : '') + data.hint;
   $('sensor').classList.toggle('hidden', G.mode !== 'level');
   $('hudTimer').textContent = G.mode === 'free' ? '0 🪙' : '0.0 s';
   hideModal();
@@ -420,10 +420,10 @@ function updatePlay(dt) {
     Object.assign(car, prev);
     car.v = -car.v * 0.25;
     G.susp.kick(impact * 0.08 * Math.sign(v0));
-    if (G.mode === 'level' && !G.over) {
+    if (G.mode === 'level' && !G.over && !save.god) {
       const what = { car: 'Has golpeado un coche aparcado.', cone: 'Has derribado un cono.', pillar: 'Has golpeado una columna.' }[hit.type] || 'Has golpeado un muro.';
       fail(what);
-    } else if (impact > 2.5) {
+    } else if (impact > (save.god ? 1 : 2.5)) {
       sound.crash();
     }
   }
@@ -536,23 +536,102 @@ function frame(now) {
 
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 
-// Modo admin: abrir el juego con #admin al final del enlace da todos los coches,
-// desbloquea todos los niveles y pone 1.000.000 de monedas.
-const ADMIN_COINS = 1000000;
-function checkAdmin() {
-  if (location.hash !== '#admin') return;
-  save.owned = [...CAR_ORDER];
-  save.coins = Math.max(save.coins, ADMIN_COINS);
-  for (let i = 0; i < LEVELS.length; i++) save.stars[i] = save.stars[i] || 1;
-  persist();
+// ---------- Modo admin ----------
+// Se abre tocando 5 veces el título del menú (o con #admin al final del enlace) e introduciendo el PIN.
+// El PIN por defecto es 1234 y se puede cambiar desde el propio panel.
+const adminEl = $('admin');
+let titleTaps = [];
+document.querySelector('.title').addEventListener('pointerdown', () => {
+  const now = performance.now();
+  titleTaps = titleTaps.filter(t => now - t < 2500).concat(now);
+  if (titleTaps.length >= 5) { titleTaps = []; openAdmin(); }
+});
+
+function openAdmin() {
+  if (G.state === 'play') return;
+  $('adminLock').classList.remove('hidden');
+  $('adminBody').classList.add('hidden');
+  $('adminErr').textContent = '';
+  $('adminPin').value = '';
+  adminEl.classList.remove('hidden');
+  setTimeout(() => $('adminPin').focus(), 50);
+}
+function closeAdmin() {
+  adminEl.classList.add('hidden');
   refreshCoins();
   if (G.state === 'garage') renderGarage();
   if (G.state === 'levels') openLevels();
-  toast('Modo admin: todos los coches y 1.000.000 monedas');
 }
-addEventListener('hashchange', checkAdmin);
+function tryPin() {
+  if ($('adminPin').value === String(save.adminPin)) {
+    sound.success();
+    $('adminLock').classList.add('hidden');
+    $('adminBody').classList.remove('hidden');
+    renderAdmin();
+  } else {
+    sound.fail();
+    $('adminErr').textContent = 'PIN incorrecto';
+    $('adminPin').value = '';
+  }
+}
+function renderAdmin() {
+  $('adminStatus').textContent = `${save.coins.toLocaleString('es-ES')} monedas · ${save.owned.length}/${CAR_ORDER.length} coches · ${Object.keys(save.stars).length}/${LEVELS.length} niveles`;
+  const god = $('adminGod');
+  god.textContent = `Sin choques: ${save.god ? 'SÍ' : 'NO'}`;
+  god.classList.toggle('on-state', !!save.god);
+  refreshCoins();
+}
+const ADMIN_ACTIONS = {
+  add10k: () => { save.coins += 10000; return '+10.000 monedas'; },
+  add100k: () => { save.coins += 100000; return '+100.000 monedas'; },
+  million: () => { save.coins = 1000000; return 'Monedas: 1.000.000'; },
+  cars: () => { save.owned = [...CAR_ORDER]; return 'Todos los coches desbloqueados'; },
+  levels: () => { LEVELS.forEach((_, i) => { save.stars[i] = 3; }); return 'Todos los niveles con 3 estrellas'; },
+  god: () => { save.god = !save.god; return save.god ? 'Sin choques activado' : 'Sin choques desactivado'; },
+};
+document.querySelectorAll('[data-admin]').forEach(b => {
+  b.onclick = () => {
+    const msg = ADMIN_ACTIONS[b.dataset.admin]();
+    persist();
+    sound.coin();
+    renderAdmin();
+    toast(msg);
+  };
+});
+$('adminEnter').onclick = tryPin;
+$('adminPin').addEventListener('keydown', e => { if (e.key === 'Enter') tryPin(); });
+$('adminCancel').onclick = closeAdmin;
+$('adminClose').onclick = closeAdmin;
+$('adminSavePin').onclick = () => {
+  const pin = $('adminNewPin').value.trim();
+  if (!/^\d{4,8}$/.test(pin)) { toast('El PIN debe tener de 4 a 8 números'); return; }
+  save.adminPin = pin;
+  persist();
+  $('adminNewPin').value = '';
+  toast('PIN cambiado');
+};
+// El reinicio pide un segundo toque para confirmar.
+let resetArmed = null;
+$('adminReset').onclick = () => {
+  const b = $('adminReset');
+  if (!resetArmed) {
+    b.textContent = '¿Seguro? Toca otra vez';
+    resetArmed = setTimeout(() => { resetArmed = null; b.textContent = 'Reiniciar partida'; }, 3000);
+    return;
+  }
+  clearTimeout(resetArmed);
+  resetArmed = null;
+  b.textContent = 'Reiniciar partida';
+  Object.assign(save, { coins: 0, owned: ['sedan'], car: 'sedan', stars: {}, god: false });
+  persist();
+  renderAdmin();
+  showShowroom(save.car, save.color);
+  toast('Partida reiniciada');
+};
+const checkAdminHash = () => { if (location.hash === '#admin') openAdmin(); };
+addEventListener('hashchange', checkAdminHash);
 
 window.__game = G; // útil para depurar desde la consola
 openMenu();
-checkAdmin();
+checkAdminHash();
 requestAnimationFrame(frame);

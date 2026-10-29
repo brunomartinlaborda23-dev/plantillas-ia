@@ -1,6 +1,6 @@
 // Partida guardada en el dispositivo.
 const KEY = 'parkingpro_save_v1';
-const DEFAULTS = { coins: 0, owned: ['sedan'], car: 'sedan', color: '#d62828', stars: {}, muted: false };
+const DEFAULTS = { coins: 0, owned: ['sedan'], car: 'sedan', color: '#d62828', stars: {}, muted: false, adminPin: '1234', god: false };
 
 function load() {
   try {
