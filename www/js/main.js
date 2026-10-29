@@ -536,6 +536,23 @@ function frame(now) {
 
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 
+// Modo admin: abrir el juego con #admin al final del enlace da todos los coches,
+// desbloquea todos los niveles y pone 1.000.000 de monedas.
+const ADMIN_COINS = 1000000;
+function checkAdmin() {
+  if (location.hash !== '#admin') return;
+  save.owned = [...CAR_ORDER];
+  save.coins = Math.max(save.coins, ADMIN_COINS);
+  for (let i = 0; i < LEVELS.length; i++) save.stars[i] = save.stars[i] || 1;
+  persist();
+  refreshCoins();
+  if (G.state === 'garage') renderGarage();
+  if (G.state === 'levels') openLevels();
+  toast('Modo admin: todos los coches y 1.000.000 monedas');
+}
+addEventListener('hashchange', checkAdmin);
+
 window.__game = G; // útil para depurar desde la consola
 openMenu();
+checkAdmin();
 requestAnimationFrame(frame);
