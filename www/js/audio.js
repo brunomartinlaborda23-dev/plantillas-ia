@@ -33,6 +33,25 @@ export class Sound {
     this.engGain.connect(this.master);
     this.osc.start();
     this.osc2.start();
+
+    // Chirrido de neumáticos: ruido en bucle por un filtro paso banda.
+    const len = ctx.sampleRate * 2;
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1900;
+    bp.Q.value = 9;
+    this.squealGain = ctx.createGain();
+    this.squealGain.gain.value = 0;
+    src.connect(bp);
+    bp.connect(this.squealGain);
+    this.squealGain.connect(this.master);
+    src.start();
   }
 
   setMuted(m) {
@@ -40,13 +59,29 @@ export class Sound {
     if (this.master) this.master.gain.value = m ? 0 : 0.6;
   }
 
-  engine(on, speed, throttle) {
+  // rpm: revoluciones; cyl: pulsos por vuelta (4 cil. = 2, V8 = 4, V12 = 6...).
+  engine(on, rpm, throttle, cyl = 2) {
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
-    const f = 34 + speed * 4.5 + throttle * 22;
-    this.osc.frequency.setTargetAtTime(f, t, 0.08);
-    this.osc2.frequency.setTargetAtTime(f * 0.5, t, 0.08);
-    this.engGain.gain.setTargetAtTime(on ? 0.05 + throttle * 0.05 : 0, t, 0.12);
+    const f = (rpm / 60) * cyl * 0.5;
+    this.osc.frequency.setTargetAtTime(f, t, 0.03);
+    this.osc2.frequency.setTargetAtTime(f * 0.5, t, 0.03);
+    this.filter.frequency.setTargetAtTime(250 + throttle * 900 + rpm * 0.12, t, 0.05);
+    this.engGain.gain.setTargetAtTime(on ? 0.035 + throttle * 0.05 + rpm / 200000 : 0, t, 0.08);
+  }
+
+  // Breve corte de gas al cambiar de marcha.
+  shift() {
+    if (!this.ctx) return;
+    const g = this.engGain.gain, t = this.ctx.currentTime;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(0.01, t);
+    g.linearRampToValueAtTime(0.06, t + 0.15);
+  }
+
+  squeal(amount) {
+    if (!this.ctx) return;
+    this.squealGain.gain.setTargetAtTime(Math.min(1, amount) * 0.12, this.ctx.currentTime, 0.06);
   }
 
   tone(freq, dur, vol = 0.15, type = 'sine', delay = 0) {

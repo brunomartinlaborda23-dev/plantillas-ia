@@ -103,7 +103,7 @@ function buildObstacle(o) {
       g.add(body, cap);
       return g;
     }
-    case 'car': return buildCar(o.model, o.color);
+    case 'car': return buildCar(o.model, o.color, { parked: true });
     case 'cone': {
       const g = new THREE.Group();
       const c = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.72, 14), M.cone);

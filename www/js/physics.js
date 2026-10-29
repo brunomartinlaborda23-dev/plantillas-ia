@@ -75,7 +75,13 @@ export function carObb(c, spec) {
 
 // Avanza el coche dt segundos. inp = { throttle, brake, steer (-1..1, + = izquierda), handbrake }.
 export function stepCar(c, inp, s, dt) {
-  const target = clamp(inp.steer, -1, 1) * s.maxSteer;
+  let target = clamp(inp.steer, -1, 1) * s.maxSteer;
+  // A velocidad, los neumáticos no dan más agarre lateral que `grip` (m/s²): el coche subvira.
+  const v2 = c.v * c.v;
+  if (v2 > 1) {
+    const lim = Math.atan(((s.grip || 9) * s.wb) / v2);
+    target = clamp(target, -lim, lim);
+  }
   const rate = (s.steerRate || 2.2) * dt;
   c.steer += clamp(target - c.steer, -rate, rate);
 

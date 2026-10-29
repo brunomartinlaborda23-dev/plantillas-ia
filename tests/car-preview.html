@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- Herramienta de desarrollo: muestra todos los coches desde varios ángulos.
+     Servir la raíz del repositorio (npx http-server .) y abrir /tests/car-preview.html -->
+<html><head><meta charset="utf-8"><title>Vista previa de coches</title>
+<style>body{margin:0;background:#222}canvas{display:block}</style></head>
+<body>
+<script type="module">
+import * as THREE from '../www/vendor/three.module.min.js';
+import { RoomEnvironment } from '../www/vendor/RoomEnvironment.js';
+import { buildCar } from '../www/js/cars.js';
+import { CAR_ORDER } from '../www/js/specs.js';
+
+const params = new URLSearchParams(location.search);
+const keys = (params.get('cars') || CAR_ORDER.join(',')).split(',');
+const views = [[0.8, 0.35], [-2.4, 0.3], [Math.PI / 2, 0.05]]; // [ángulo, altura]
+const W = 420, H = 260;
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(W * views.length, H * keys.length);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true;
+renderer.setScissorTest(true);
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x9fb6c8);
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.8;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.6));
+const sun = new THREE.DirectionalLight(0xffffff, 2);
+sun.position.set(5, 10, 6);
+sun.castShadow = true;
+scene.add(sun);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x55585c }));
+floor.receiveShadow = true;
+scene.add(floor);
+const cam = new THREE.PerspectiveCamera(32, W / H, 0.1, 100);
+const colors = ['#d62828', '#1d4ed8', '#f1f5f9', '#fcbf49', '#2a9d8f', '#64748b', '#f77f00', '#d62828'];
+
+keys.forEach((k, row) => {
+  const car = buildCar(k, colors[row % colors.length], { parked: params.has('parked') });
+  scene.add(car);
+  views.forEach(([a, h], col) => {
+    const d = 7.2;
+    cam.position.set(Math.sin(a) * d, 1 + h * d, Math.cos(a) * d);
+    cam.lookAt(0, 0.6, 0);
+    const y = (keys.length - 1 - row) * H;
+    renderer.setViewport(col * W, y, W, H);
+    renderer.setScissor(col * W, y, W, H);
+    renderer.render(scene, cam);
+  });
+  scene.remove(car);
+});
+document.title = 'listo';
+</script>
+</body></html>
