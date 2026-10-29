@@ -1,0 +1,218 @@
+:root {
+  --accent: #ffb400;
+  --accent-dark: #c98a00;
+  --panel: rgba(18, 21, 28, 0.86);
+  --text: #f4f6fb;
+  --muted: #a5adbd;
+  --ok: #22c55e;
+  --bad: #ef4444;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #12151c;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+.hidden { display: none !important; }
+
+.screen {
+  position: fixed;
+  inset: 0;
+  padding: calc(16px + var(--safe-t)) calc(16px + var(--safe-r)) calc(16px + var(--safe-b)) calc(16px + var(--safe-l));
+  display: flex;
+  flex-direction: column;
+}
+
+/* Botones */
+.btn {
+  font: inherit;
+  font-weight: 800;
+  color: var(--text);
+  background: linear-gradient(#3a4252, #262c38);
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 10px 16px;
+  cursor: pointer;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.45);
+  transition: transform 0.06s;
+}
+.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.45); }
+.btn.primary { background: linear-gradient(#ffc53d, var(--accent-dark)); color: #1a1300; border-color: rgba(255, 255, 255, 0.35); }
+.btn.big { font-size: 20px; padding: 14px 22px; min-width: 240px; }
+.btn.small { font-size: 15px; padding: 8px 14px; }
+.btn.ghost { background: transparent; box-shadow: none; border-color: rgba(255, 255, 255, 0.25); }
+.btn.round { width: 52px; height: 52px; border-radius: 50%; font-size: 28px; padding: 0; }
+.btn.icon { width: 46px; height: 46px; padding: 0; font-size: 20px; }
+.btn:disabled { opacity: 0.45; }
+
+.coins {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--panel);
+  padding: 8px 14px; border-radius: 999px;
+  font-weight: 800; font-size: 17px;
+}
+.coin-ico {
+  width: 18px; height: 18px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ffe28a, #f0a500);
+  box-shadow: inset 0 0 0 2px #b97c00;
+}
+
+/* Menú */
+#menu { align-items: center; justify-content: space-between;
+  /* el coche queda visible entre el título y los botones */ background: linear-gradient(180deg, rgba(10, 12, 18, 0.7), transparent 40%, transparent 60%, rgba(10, 12, 18, 0.85)); }
+.top-right { position: absolute; top: calc(16px + var(--safe-t)); right: calc(16px + var(--safe-r)); }
+.title { text-align: center; margin-top: 4px; }
+.title h1 {
+  margin: 0; font-size: clamp(40px, 11vw, 78px); line-height: 0.9; letter-spacing: 2px;
+  font-weight: 900; font-style: italic; color: #fff;
+  text-shadow: 0 4px 0 #000, 0 0 30px rgba(255, 180, 0, 0.35);
+}
+.title h1 span { display: block; color: var(--accent); font-size: 0.55em; letter-spacing: 6px; }
+.title p { color: var(--muted); margin: 10px 0 0; font-weight: 600; }
+.menu-buttons { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px; }
+.menu-buttons .btn.big { min-width: 0; width: 220px; }
+
+/* Barras de cabecera */
+.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.bar h2 { margin: 0; font-size: 24px; font-style: italic; }
+.panel-screen { background: rgba(12, 14, 20, 0.88); }
+
+/* Niveles */
+#levelGrid {
+  margin-top: 20px; flex: 1; overflow-y: auto;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; align-content: start;
+  touch-action: pan-y;
+}
+.lvl {
+  aspect-ratio: 1.2; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  background: linear-gradient(#323a49, #222833); border: 2px solid rgba(255, 255, 255, 0.1);
+  font: inherit; color: var(--text); cursor: pointer;
+}
+.lvl b { font-size: 30px; }
+.lvl small { color: var(--muted); font-size: 12px; text-align: center; padding: 0 6px; }
+.lvl .stars { color: var(--accent); letter-spacing: 2px; }
+.lvl.locked { opacity: 0.4; }
+
+/* Garaje */
+#garage { justify-content: space-between; }
+.garage-bottom { display: flex; flex-direction: column; align-items: center; gap: 14px; background: var(--panel); border-radius: 22px; padding: 16px; }
+.car-select { display: flex; align-items: center; gap: 16px; width: 100%; max-width: 460px; justify-content: space-between; }
+.car-info { text-align: center; flex: 1; }
+.car-info h3 { margin: 0 0 6px; font-size: 24px; font-style: italic; }
+#carStats { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; font-size: 13px; color: var(--muted); text-align: left; }
+.stat-bar { height: 8px; background: #2a303c; border-radius: 4px; align-self: center; overflow: hidden; }
+.stat-bar i { display: block; height: 100%; background: var(--accent); }
+#colorRow { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.swatch { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255, 255, 255, 0.2); cursor: pointer; padding: 0; }
+.swatch.sel { border-color: #fff; transform: scale(1.12); }
+
+/* HUD */
+#hud { position: fixed; inset: 0; pointer-events: none; }
+#hud .btn, #hud .pedal, #wheel { pointer-events: auto; }
+.hud-top {
+  position: absolute; top: calc(10px + var(--safe-t)); left: calc(10px + var(--safe-l)); right: calc(10px + var(--safe-r));
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 10px;
+}
+.hud-info { background: var(--panel); padding: 8px 14px; border-radius: 14px; min-width: 120px; }
+#hudLevel { font-weight: 800; font-size: 14px; }
+#hudTimer { font-size: 22px; font-weight: 900; font-variant-numeric: tabular-nums; color: var(--accent); }
+#hint { background: var(--panel); padding: 8px 14px; border-radius: 14px; font-size: 14px; font-weight: 600; max-width: 46%; text-align: center; }
+.hud-btns { display: flex; gap: 8px; }
+
+#sensor { position: absolute; top: calc(78px + var(--safe-t)); left: 50%; transform: translateX(-50%); display: flex; gap: 4px; }
+#sensor span { width: 26px; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.15); }
+#sensor span.on:nth-child(-n+2) { background: var(--ok); }
+#sensor span.on:nth-child(3) { background: #facc15; }
+#sensor span.on:nth-child(n+4) { background: var(--bad); }
+
+#parkBar { position: absolute; top: calc(96px + var(--safe-t)); left: 50%; transform: translateX(-50%); width: 180px; height: 10px; border-radius: 5px; background: rgba(0, 0, 0, 0.4); overflow: hidden; opacity: 0; transition: opacity 0.2s; }
+#parkBar.show { opacity: 1; }
+#parkBar div { height: 100%; width: 0; background: var(--ok); }
+
+#wheel {
+  position: absolute; left: calc(18px + var(--safe-l)); bottom: calc(18px + var(--safe-b));
+  width: min(38vw, 190px); height: min(38vw, 190px); touch-action: none;
+}
+#wheel svg { width: 100%; height: 100%; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.5)); }
+
+#speedo {
+  position: absolute; left: 50%; bottom: calc(14px + var(--safe-b)); transform: translateX(-50%);
+  background: var(--panel); border-radius: 14px; padding: 6px 14px; text-align: center; min-width: 90px;
+}
+#spd { font-size: 26px; font-weight: 900; font-variant-numeric: tabular-nums; display: block; line-height: 1; }
+#speedo small { color: var(--muted); font-size: 11px; }
+
+#pedals { position: absolute; right: calc(16px + var(--safe-r)); bottom: calc(16px + var(--safe-b)); display: flex; align-items: flex-end; gap: 12px; }
+.pedal-col { display: flex; flex-direction: column; gap: 10px; }
+.btn.gear, .btn.hand { width: 58px; height: 58px; padding: 0; font-size: 24px; border-radius: 14px; }
+.btn.gear.rev { background: linear-gradient(#ef4444, #a11d1d); }
+.btn.hand.on { background: linear-gradient(#ef4444, #a11d1d); }
+.pedal {
+  font: inherit; font-weight: 900; font-size: 12px; letter-spacing: 1px; color: rgba(255, 255, 255, 0.85);
+  border: 2px solid rgba(255, 255, 255, 0.15); border-radius: 14px; cursor: pointer; touch-action: none;
+  background: repeating-linear-gradient(0deg, #2c323d 0 8px, #1f242d 8px 14px);
+  box-shadow: 0 5px 0 rgba(0, 0, 0, 0.5);
+}
+.pedal.brake { width: 84px; height: 92px; }
+.pedal.gas { width: 66px; height: 140px; }
+.pedal.on { transform: translateY(4px) scale(0.97); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.5); filter: brightness(1.4); }
+
+/* Modal */
+#modal { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55); display: flex; align-items: center; justify-content: center; padding: 20px; }
+.card { background: #1c212b; border: 2px solid rgba(255, 255, 255, 0.1); border-radius: 24px; padding: 24px; text-align: center; width: min(420px, 100%); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6); }
+.card h2 { margin: 0; font-size: 30px; font-style: italic; }
+#mStars { font-size: 42px; color: var(--accent); letter-spacing: 6px; margin: 8px 0; }
+#mStars .off { color: #3a4150; }
+#mText { color: var(--muted); font-weight: 600; white-space: pre-line; }
+#mButtons { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 16px; }
+
+#toast {
+  position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%) scale(0.9);
+  background: var(--panel); padding: 12px 20px; border-radius: 14px; font-weight: 800; font-size: 18px;
+  opacity: 0; transition: opacity 0.2s, transform 0.2s; pointer-events: none;
+}
+#toast.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+
+@media (max-height: 500px) {
+  .btn.big { min-width: 200px; font-size: 17px; padding: 10px 18px; }
+  .title h1 { font-size: 44px; }
+  .title p { display: none; }
+  #wheel { width: 150px; height: 150px; }
+  .pedal.gas { height: 116px; }
+  .pedal.brake { height: 78px; }
+}
+@media (max-width: 600px) {
+  #hint { display: none; }
+}
+
+#rotate { display: none; }
+@media (orientation: portrait) and (max-width: 700px) {
+  #rotate {
+    display: block; position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%);
+    background: var(--panel); padding: 12px 16px; border-radius: 14px; font-weight: 700; text-align: center; width: 80%;
+  }
+}
+
+@media (orientation: landscape) {
+  .garage-bottom {
+    position: absolute; right: calc(16px + var(--safe-r)); top: calc(76px + var(--safe-t)); bottom: calc(16px + var(--safe-b));
+    width: 340px; justify-content: center; overflow-y: auto;
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "parking-pro-3d",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Juego 3D de aparcamiento para iPhone/iPad (Three.js + Capacitor)",
+  "scripts": {
+    "start": "npx http-server www -p 8080 -c-1",
+    "test": "node tests/levels.test.mjs",
+    "ios:add": "npx cap add ios",
+    "ios:icons": "npx @capacitor/assets generate --ios",
+    "ios:sync": "npx cap sync ios",
+    "ios:open": "npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/ios": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^7.0.0"
+  }
+}
