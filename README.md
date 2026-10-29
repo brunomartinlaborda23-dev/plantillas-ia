@@ -35,6 +35,24 @@ Hecho con **Three.js** (gráficos 3D) y empaquetado para iOS con **Capacitor**. 
   luces de freno y marcha atrás, 4 cámaras (y arrastrar en pantalla para girar la vista).
 - Estrellas según el tiempo, monedas, progreso guardado en el dispositivo, sonidos sintetizados.
 
+## Modelos 3D propios (coches realistas)
+
+El juego acepta modelos 3D de verdad en formato **.glb** (o `.gltf` de un solo archivo, también comprimidos con
+Draco o Meshopt):
+
+- **Desde el juego:** Garaje → elige el coche → **📦 Modelo 3D → Cargar archivo .glb**. Se guarda en ese navegador.
+- **Incluidos con el juego:** copia el `.glb` a `www/models/` y apúntalo en `www/models/models.json`
+  (ver `www/models/README.md`).
+
+El juego lo adapta solo: lo pone a lo largo, lo escala al largo real del coche (las físicas no cambian), lo apoya en
+el suelo, busca el morro por los faros y pilotos, detecta las ruedas (por nombre o por forma) para que giren y
+viren, y la pintura (por nombre o por ser la mayor superficie) para aplicar el color del jugador. Funcionan el color,
+las llantas (si se detectan), la suspensión y el neón; los alerones y body kits son solo para los modelos de serie.
+
+**Dónde conseguir modelos:** tiendas de modelos 3D con licencia para juegos (Sketchfab, CGTrader, TurboSquid,
+Fab…). Revisa siempre la licencia del modelo, y recuerda que las formas de los coches de marcas reales también están
+protegidas aunque no lleven logo. Para móviles conviene que el modelo tenga menos de ~200.000 triángulos.
+
 ## Taller y sonido de motor
 
 - **Taller** (Garaje → 🔧 Taller): cada coche se tunea por separado. Las piezas se compran una vez por coche

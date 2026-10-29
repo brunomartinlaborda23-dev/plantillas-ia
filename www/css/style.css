@@ -271,3 +271,12 @@ html, body {
 #steerBtns { position: absolute; left: calc(16px + var(--safe-l)); bottom: calc(16px + var(--safe-b)); display: flex; gap: 12px; }
 .pedal.steer { width: 86px; height: 86px; font-size: 30px; pointer-events: auto; }
 @media (max-height: 500px) { .pedal.steer { width: 74px; height: 74px; } }
+
+/* Modelo 3D propio */
+#modelPanel { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 20; }
+#modelPanel h2 { color: var(--accent); margin: 0; }
+.model-status { margin: 0; font-weight: 700; line-height: 1.5; white-space: pre-line; }
+.model-status.err { color: var(--bad); }
+.model-tips { font-size: 13px; font-weight: 500; }
+label.btn { display: inline-flex; align-items: center; }
+.btn:disabled { pointer-events: none; }

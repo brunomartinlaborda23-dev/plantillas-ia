@@ -15,6 +15,21 @@ lua.lua_setglobal(L, to_luastring('PHYSICS'));
 run(src('../src/ReplicatedStorage/ParkingShared/GameData.lua'), 'GameData');
 lua.lua_setglobal(L, to_luastring('GAMEDATA'));
 run(src('physics_spec.lua'), 'physics_spec');
-const fails = lua.lua_tointeger(L, -1);
-console.log(fails ? `${fails} fallos` : 'OK: física de Roblox verificada');
+let fails = lua.lua_tointeger(L, -1);
+lua.lua_pop(L, 1);
+
+// CarBuilder con una imitación de la API de Roblox
+run(src('mock_roblox.lua'), 'mock_roblox');
+lua.lua_pop(L, 1);
+run(`package.preload.Config = function() return (function() ${'\n'}${src('../src/ReplicatedStorage/ParkingShared/Config.lua')}${'\n'} end)() end`, 'cfg');
+lua.lua_pop(L, 1);
+run(`script = { Parent = { Config = 'Config', GameData = 'GameData' } }
+local realRequire = require
+require = function(m) if m == 'Config' then return realRequire('Config') end if m == 'GameData' then return GAMEDATA end return realRequire(m) end`, 'shim');
+lua.lua_pop(L, 1);
+run(src('../src/ReplicatedStorage/ParkingShared/CarBuilder.lua'), 'CarBuilder');
+lua.lua_setglobal(L, to_luastring('CARBUILDER'));
+run(src('classify_spec.lua'), 'classify_spec');
+fails += lua.lua_tointeger(L, -1);
+console.log(fails ? `${fails} fallos` : 'OK: física y montaje de coches de Roblox verificados');
 process.exit(fails ? 1 : 0);

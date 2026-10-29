@@ -63,6 +63,7 @@
       <div class="garage-extra">
         <button class="btn" id="btnTune">🔧 Taller</button>
         <button class="btn" id="btnRev">🔊 Escuchar motor</button>
+        <button class="btn" id="btnModel">📦 Modelo 3D</button>
       </div>
     </div>
   </div>
@@ -171,6 +172,25 @@
           <button class="btn primary" id="adminClose">Cerrar</button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Modelo 3D propio para el coche que se está viendo en el garaje -->
+  <div id="modelPanel" class="hidden">
+    <div class="card admin-card">
+      <h2>Modelo 3D</h2>
+      <p id="modelCar" class="admin-note"></p>
+      <p id="modelStatus" class="model-status"></p>
+      <div class="admin-row">
+        <label class="btn primary" for="modelFile">Cargar archivo .glb</label>
+        <input id="modelFile" type="file" accept=".glb,.gltf" hidden>
+        <button class="btn" id="modelFlip">Girar 180°</button>
+        <button class="btn danger" id="modelRemove">Quitar modelo</button>
+      </div>
+      <p class="admin-note model-tips">Formato .glb (o .gltf de un solo archivo). El juego lo coloca, lo ajusta al tamaño real
+        del coche, pinta la carrocería con tu color y hace girar las ruedas si las encuentra. El modelo se guarda en este
+        navegador. Usa solo modelos con licencia que te permita usarlos.</p>
+      <div class="admin-row"><button class="btn" id="modelClose">Cerrar</button></div>
     </div>
   </div>
 

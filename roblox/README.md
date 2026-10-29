@@ -32,7 +32,20 @@ Para cada archivo de `models/` (`sedan`, `hatch`, `suv`, `pickup`, `sport`, `cs`
 
 No hace falta colocarlos ni escalarlos: el juego los ajusta a su tamaño real, los pinta del color elegido y hace
 girar las ruedas por su cuenta (busca las piezas por su nombre: `Body`, `Glass`, `Tire_FL`...).
-Si algún coche saliera mirando hacia atrás, pon `Config.MODEL_YAW_FIX = 180` en `ReplicatedStorage → ParkingShared → Config`.
+Si algún coche saliera mirando hacia atrás, ponlo en `Config.MODEL_FIX` (por ejemplo `rs = 180`) en `ReplicatedStorage → ParkingShared → Config`.
+
+### 2b. Usar modelos 3D de cualquier origen
+Puedes importar cualquier coche en 3D (de un artista, de una tienda de modelos o de la Creator Store) en lugar de los
+de `models/`. Impórtalo igual (*Import 3D*), ponle el nombre del coche que sustituye (`rs`, `cs`, `hyper`...) y
+muévelo a `ReplicatedStorage → Cars`. El juego:
+
+- lo pone a lo largo y lo escala al largo real del coche;
+- busca el morro por los nombres de faros y pilotos (si sale al revés: `Config.MODEL_FIX = { rs = 180 }`);
+- detecta las ruedas por su nombre (wheel, tire, rim, rueda, llanta...) o por su forma, para que giren y viren;
+- detecta la pintura por su nombre (paint, body, carrocería...) o como la pieza más grande, y le aplica tu color.
+
+Roblox no acepta piezas de más de **20.000 triángulos**: si el importador da error, reduce el modelo en Blender
+(modificador *Decimate*) o sepáralo en varias piezas. Revisa la licencia del modelo antes de publicarlo.
 
 ### 3. Sonido de los motores (opcional)
 1. En <https://create.roblox.com> → *Creations → Development Items → Audio*, sube los 7 archivos de `sounds/`.

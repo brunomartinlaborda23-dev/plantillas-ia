@@ -23,8 +23,12 @@ Config.SOUND_BASE_RPM = 3000 -- revoluciones a las que se grabaron los bucles
 -- Escala: cuántos studs mide un metro del juego.
 Config.SCALE = 3
 
--- Si un coche importado sale mirando hacia atrás, pon 180.
-Config.MODEL_YAW_FIX = 0
+-- Modelos importados: el juego los orienta solo (por la forma y por los nombres de faros y pilotos).
+-- Si alguno sale mirando hacia atrás o de lado, ponle aquí los grados que hay que girarlo, p. ej. rs = 180.
+Config.MODEL_FIX = {
+	-- rs = 180,
+}
+Config.MODEL_YAW_FIX = 0 -- giro aplicado a todos los coches que no estén en MODEL_FIX
 
 -- Monedas
 Config.START_COINS = 0

@@ -1,0 +1,41 @@
+<!doctype html>
+<!-- Genera un .glb de prueba que imita un modelo descargado de internet: nombres sin sentido,
+     en centímetros, girado 90° y descentrado. Sirve para probar la carga de modelos propios.
+     Servir la raíz del repositorio y abrir /tests/make-test-model.html: window.glb queda en base64. -->
+<html><head><meta charset="utf-8"><title>Modelo de prueba</title></head>
+<body>
+<script type="module">
+import * as THREE from '../www/vendor/three.module.min.js';
+import { GLTFExporter } from '../tools/GLTFExporter.js';
+import { buildCar } from '../www/js/cars.js';
+
+const car = buildCar('cs', '#3366cc');
+const scene = new THREE.Scene();
+const wrap = new THREE.Group();
+wrap.add(car);
+wrap.rotation.y = Math.PI / 2;      // largo a lo ancho
+wrap.scale.setScalar(100);          // centímetros
+wrap.position.set(250, 40, -120);   // descentrado y elevado
+scene.add(wrap);
+let i = 0;
+const mats = new Map();
+scene.traverse(o => {
+  o.name = `Object_${i++}`;
+  if (o.isMesh) {
+    if (!mats.has(o.material)) {
+      const m = new THREE.MeshStandardMaterial({ color: o.material.color, metalness: o.material.metalness, roughness: o.material.roughness });
+      m.name = `Material.${String(mats.size).padStart(3, '0')}`;
+      if (o.material.emissive) { m.emissive.copy(o.material.emissive); m.emissiveIntensity = o.material.emissiveIntensity; }
+      mats.set(o.material, m);
+    }
+    o.material = mats.get(o.material);
+  }
+});
+const glb = await new GLTFExporter().parseAsync(scene, { binary: true });
+const bytes = new Uint8Array(glb);
+let bin = '';
+for (let k = 0; k < bytes.length; k += 0x8000) bin += String.fromCharCode(...bytes.subarray(k, k + 0x8000));
+window.glb = btoa(bin);
+document.title = 'listo';
+</script>
+</body></html>

@@ -8,6 +8,7 @@ import { Drivetrain, Suspension, SkidMarks } from './effects.js';
 import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
 import { TUNING, TUNING_ORDER, DEFAULT_TUNING } from './tuning.js';
 import { VOICES } from './engine-sound.js';
+import { initCustomModels, onModelsChanged, setUserModel, flipUserModel, removeUserModel, modelInfo, modelVersion, getTemplate } from './custom-models.js';
 import { Controls } from './controls.js';
 import { Sound } from './audio.js';
 import { save, persist } from './storage.js';
@@ -234,7 +235,7 @@ $('carAction').onclick = () => {
 const getTuning = (key) => ({ ...DEFAULT_TUNING, ...save.tuning[key] });
 
 function showShowroom(key, color) {
-  const id = `${key}${color}${JSON.stringify(getTuning(key))}`;
+  const id = `${key}${color}${JSON.stringify(getTuning(key))}${modelVersion(key)}`;
   if (!G.showroomCar || G.state === 'play' || G.showroomKey !== id || !world.userData.showroom) {
     clearWorld();
     setEnv('showroom');
@@ -397,7 +398,7 @@ function syncCarMesh() {
   carMesh.rotation.y = car.a;
   const ud = carMesh.userData;
   for (const p of ud.fronts) p.rotation.y = car.steer;
-  ud.brakeMat.emissiveIntensity = car.braking ? 2.5 : 0.35;
+  for (const m of ud.brakeMats || [ud.brakeMat]) m.emissiveIntensity = car.braking ? 2.5 : 0.35;
   ud.revMat.emissiveIntensity = car.gear === -1 ? 2 : 0;
 }
 
@@ -654,7 +655,10 @@ function renderTuning() {
   }
   const box = $('tuneOptions');
   box.innerHTML = '';
-  for (const o of TUNING[G.tuneCat].options) {
+  // Alerones y body kits están hechos para los modelos de serie.
+  const customLocked = getTemplate(key) && (G.tuneCat === 'spoiler' || G.tuneCat === 'kit');
+  if (customLocked) box.innerHTML = '<p class="admin-note">No disponible con un modelo 3D propio. Quita el modelo en «📦 Modelo 3D» para usar estas piezas.</p>';
+  for (const o of customLocked ? [] : TUNING[G.tuneCat].options) {
     const owned = o.price === 0 || save.parts.includes(`${key}:${G.tuneCat}:${o.id}`);
     const sel = cur[G.tuneCat] === o.id;
     const b = document.createElement('button');
@@ -801,6 +805,72 @@ const checkAdminHash = () => { if (location.hash === '#admin') openAdmin(); };
 addEventListener('hashchange', checkAdminHash);
 
 window.__game = G; // útil para depurar desde la consola
+// ---------- Modelo 3D propio ----------
+function renderModelPanel(message, isError) {
+  const key = CAR_ORDER[G.garageIndex];
+  const info = modelInfo(key);
+  $('modelCar').textContent = CARS[key].name;
+  const st = $('modelStatus');
+  st.classList.toggle('err', !!isError);
+  if (message) st.textContent = message;
+  else if (!info) st.textContent = 'Usando el modelo de serie del juego.';
+  else {
+    const lines = [
+      `${info.name} (${info.source === 'incluido' ? 'incluido con el juego' : 'cargado por ti'})`,
+      `${info.triangles.toLocaleString('es-ES')} triángulos · ${info.wheels}/4 ruedas detectadas · pintura ${info.paint ? 'detectada' : 'no detectada'}`,
+    ];
+    lines.push(info.front ? 'Morro orientado automáticamente por las luces. Si va al revés, pulsa «Girar 180°».' : 'No se ha podido saber dónde está el morro: si va al revés, pulsa «Girar 180°».');
+    if (info.wheels < 4) lines.push('Las ruedas que no se detectan no giran, pero el coche funciona igual.');
+    if (info.triangles > 400000) lines.push('Modelo muy pesado: puede ir lento en móviles.');
+    if (info.notSaved) lines.push('No se ha podido guardar en el navegador: se perderá al cerrar.');
+    st.textContent = lines.join('\n');
+  }
+  const mine = info && info.source === 'archivo';
+  $('modelFlip').disabled = !mine;
+  $('modelRemove').disabled = !mine;
+}
+$('btnModel').onclick = () => {
+  sound.click();
+  renderModelPanel();
+  $('modelPanel').classList.remove('hidden');
+};
+$('modelClose').onclick = () => { sound.click(); $('modelPanel').classList.add('hidden'); };
+$('modelFile').onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (file.size > 60 * 1024 * 1024) { renderModelPanel('El archivo pesa más de 60 MB. Usa una versión más ligera del modelo.', true); return; }
+  renderModelPanel('Cargando ' + file.name + '…');
+  try {
+    await setUserModel(CAR_ORDER[G.garageIndex], file);
+    sound.success();
+    renderModelPanel();
+  } catch (err) {
+    sound.fail();
+    renderModelPanel('No se pudo leer el modelo. Comprueba que es un .glb válido (o .gltf de un solo archivo).\n' + (err?.message || ''), true);
+  }
+};
+$('modelFlip').onclick = async () => {
+  sound.click();
+  renderModelPanel('Girando…');
+  await flipUserModel(CAR_ORDER[G.garageIndex]);
+  renderModelPanel();
+};
+$('modelRemove').onclick = async () => {
+  sound.click();
+  await removeUserModel(CAR_ORDER[G.garageIndex]);
+  renderModelPanel();
+};
+// Cuando un modelo termina de cargarse, se actualiza el coche que se esté viendo.
+onModelsChanged(() => {
+  if (G.state === 'play') return;
+  G.showroomKey = null;
+  const key = G.state === 'garage' || G.state === 'tuning' ? CAR_ORDER[G.garageIndex] : save.car;
+  showShowroom(key, save.color);
+  if (G.state === 'tuning') renderTuning();
+});
+initCustomModels();
+
 openMenu();
 checkAdminHash();
 requestAnimationFrame(frame);

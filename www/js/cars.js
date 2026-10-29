@@ -6,6 +6,7 @@ import { mergeGeometries, toCreasedNormals } from '../vendor/BufferGeometryUtils
 import { TessellateModifier } from '../vendor/TessellateModifier.js';
 import { CARS } from './specs.js';
 import { DEFAULT_TUNING, tuningOption } from './tuning.js';
+import { getTemplate, buildFromTemplate } from './custom-models.js';
 
 const V2 = (p) => new THREE.Vector2(p[0], p[1]);
 const smooth = (a, b, t) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return x * x * (3 - 2 * x); };
@@ -519,6 +520,16 @@ export function buildCar(key, color, { parked = false, tuning = null } = {}) {
     car.traverse(o => { if (o.isMesh && o.material === ud.paint) o.material = paint; });
     car.userData = { spec: ud.spec, paint };
     return car;
+  }
+  // Modelo 3D propio del jugador (cargado en el garaje o incluido en www/models).
+  if (getTemplate(key)) {
+    const t = { ...DEFAULT_TUNING, ...tuning };
+    return buildFromTemplate(key, {
+      color,
+      rimColor: t.rims !== 'stock' ? tuningOption('rims', t.rims).value : null,
+      neonColor: t.neon !== 'stock' ? tuningOption('neon', t.neon).value : null,
+      height: tuningOption('height', t.height).value,
+    });
   }
   return buildCarMesh(key, color, false, tuning);
 }
