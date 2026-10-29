@@ -6,6 +6,8 @@ import { buildCar } from './cars.js';
 import { buildWorld, buildShowroom } from './world.js';
 import { Drivetrain, Suspension, SkidMarks } from './effects.js';
 import { RoomEnvironment } from '../vendor/RoomEnvironment.js';
+import { TUNING, TUNING_ORDER, DEFAULT_TUNING } from './tuning.js';
+import { VOICES } from './engine-sound.js';
 import { Controls } from './controls.js';
 import { Sound } from './audio.js';
 import { save, persist } from './storage.js';
@@ -90,7 +92,7 @@ const G = {
 };
 
 // ---------- UI ----------
-const screens = ['menu', 'levels', 'garage', 'hud'];
+const screens = ['menu', 'levels', 'garage', 'tuning', 'hud'];
 function show(name) {
   for (const s of screens) $(s).classList.toggle('hidden', s !== name);
   refreshCoins();
@@ -196,13 +198,14 @@ const MAX = {
 function renderGarage() {
   const key = CAR_ORDER[G.garageIndex];
   const s = CARS[key];
+  const owned = save.owned.includes(key);
   $('carName').textContent = s.name;
   const stat = (label, v) => `<span>${label}</span><div class="stat-bar"><i style="width:${Math.round(v * 100)}%"></i></div>`;
-  $('carSub').textContent = `${s.hp} CV · 0-100 km/h en ${String(s.zero100).replace('.', ',')} s`;
+  $('carSub').textContent = `${s.hp} CV · 0-100 en ${String(s.zero100).replace('.', ',')} s · ${VOICES[s.engine.voice].label}`;
+  $('btnTune').disabled = !owned;
   $('carStats').innerHTML =
     stat('Velocidad', s.maxSpeed / MAX.speed) + stat('Aceleración', s.accel / MAX.accel) + stat('Agarre', s.grip / MAX.grip) + stat('Giro', (s.maxSteer / s.wb) / MAX.turn);
   document.querySelectorAll('.swatch').forEach((el, i) => el.classList.toggle('sel', COLORS[i] === save.color));
-  const owned = save.owned.includes(key);
   const btn = $('carAction');
   if (save.car === key) { btn.textContent = '✓ En uso'; btn.disabled = true; }
   else if (owned) { btn.textContent = 'Usar este coche'; btn.disabled = false; }
@@ -211,8 +214,8 @@ function renderGarage() {
   refreshCoins();
 }
 
-$('carPrev').onclick = () => { sound.click(); G.garageIndex = (G.garageIndex + CAR_ORDER.length - 1) % CAR_ORDER.length; renderGarage(); };
-$('carNext').onclick = () => { sound.click(); G.garageIndex = (G.garageIndex + 1) % CAR_ORDER.length; renderGarage(); };
+$('carPrev').onclick = () => { sound.click(); G.rev = null; G.garageIndex = (G.garageIndex + CAR_ORDER.length - 1) % CAR_ORDER.length; renderGarage(); };
+$('carNext').onclick = () => { sound.click(); G.rev = null; G.garageIndex = (G.garageIndex + 1) % CAR_ORDER.length; renderGarage(); };
 $('carAction').onclick = () => {
   const key = CAR_ORDER[G.garageIndex];
   if (!save.owned.includes(key)) {
@@ -228,16 +231,19 @@ $('carAction').onclick = () => {
   renderGarage();
 };
 
+const getTuning = (key) => ({ ...DEFAULT_TUNING, ...save.tuning[key] });
+
 function showShowroom(key, color) {
-  if (!G.showroomCar || G.state === 'play' || G.showroomKey !== `${key}${color}` || !world.userData.showroom) {
+  const id = `${key}${color}${JSON.stringify(getTuning(key))}`;
+  if (!G.showroomCar || G.state === 'play' || G.showroomKey !== id || !world.userData.showroom) {
     clearWorld();
     setEnv('showroom');
     world.userData.showroom = true;
     world.add(buildShowroom());
-    G.showroomCar = buildCar(key, color);
+    G.showroomCar = buildCar(key, color, { tuning: getTuning(key) });
     G.showroomCar.position.y = 0.2;
     world.add(G.showroomCar);
-    G.showroomKey = `${key}${color}`;
+    G.showroomKey = id;
     sun.position.set(6, 14, 8);
     sun.target.position.set(0, 0, 0);
   }
@@ -265,9 +271,11 @@ function setupPlay(data, env) {
   G.refs = buildWorld(data, env);
   world.add(G.refs.group);
   G.spec = CARS[save.car];
-  G.carMesh = buildCar(save.car, save.color);
+  G.carMesh = buildCar(save.car, save.color, { tuning: getTuning(save.car) });
   world.add(G.carMesh);
   G.drive = new Drivetrain(G.spec.engine);
+  sound.setEngine(G.spec.engine.voice);
+  sound.starter();
   // Los todoterreno se inclinan más; los deportivos, menos.
   G.susp = new Suspension(G.spec.h > 1.6 ? 1.5 : G.spec.hp > 300 ? 0.6 : 1);
   G.skids = new SkidMarks(world);
@@ -479,7 +487,7 @@ function updatePlay(dt) {
   const e = spec.engine;
   $('gearTxt').textContent = car.gear === -1 ? 'R' : `D${G.drive.gear + 1}`;
   $('rpmBar').firstElementChild.style.width = `${Math.min(100, (G.drive.rpm / e.red) * 100)}%`;
-  sound.engine(!G.over, G.drive.rpm, inp.throttle, e.tone);
+  sound.engine(!G.over, G.drive.rpm, inp.throttle, e.red);
   updateCamera(dt, false);
 }
 
@@ -513,15 +521,109 @@ function updateDynamics(dt, inp, longAcc) {
 
 function updateShowroom(dt) {
   const t = G.clock * 0.25;
-  const r = G.state === 'garage' ? 7.5 : 8;
+  const inGarage = G.state === 'garage' || G.state === 'tuning';
+  const r = inGarage ? 7.5 : 8;
   camera.position.set(Math.sin(t) * r, 2.4, Math.cos(t) * r);
   // En el garaje horizontal el panel ocupa la derecha: desplazamos el coche a la izquierda.
-  const side = G.state === 'garage' && innerWidth > innerHeight ? 2.2 : 0;
-  const lift = G.state === 'garage' && innerWidth <= innerHeight ? -1.2 : 0.9;
+  const side = inGarage && innerWidth > innerHeight ? 2.2 : 0;
+  const lift = inGarage && innerWidth <= innerHeight ? -1.2 : 0.9;
   camera.lookAt(Math.cos(t) * side, lift, -Math.sin(t) * side);
-  sound.engine(false, 0, 0);
+  updateRev(dt, inGarage);
   sound.squeal(0);
 }
+
+// ---------- Escuchar motor (garaje) ----------
+// Secuencia: arranque, ralentí, acelerón corto, subida hasta el corte y soltar (soplido/petardeos).
+function revScript(t, e) {
+  if (t < 0.55) return [250, 0];
+  if (t < 1.6) return [e.idle * (1 + 1.1 * Math.exp(-(t - 0.55) * 4)), 0];
+  if (t < 1.95) return [e.red * 0.62, 1];
+  if (t < 2.6) return [e.idle, 0];
+  if (t < 3.8) return [e.red * 0.97, 1];
+  if (t < 6.2) return [e.idle, 0];
+  return null;
+}
+function startRev(key) {
+  const e = CARS[key].engine;
+  sound.init();
+  sound.setEngine(e.voice);
+  sound.starter();
+  G.rev = { t: 0, e, rpm: 0 };
+}
+function updateRev(dt, inGarage) {
+  const step = G.rev && inGarage ? revScript(G.rev.t, G.rev.e) : null;
+  if (!step) {
+    G.rev = null;
+    sound.engine(false, 0, 0);
+    return;
+  }
+  G.rev.t += dt;
+  const [target, thr] = step;
+  G.rev.rpm += (target - G.rev.rpm) * Math.min(1, dt * (target > G.rev.rpm ? 5 : 2.5));
+  sound.engine(true, G.rev.rpm, thr, G.rev.e.red);
+  // La carrocería tiembla un poco con los acelerones.
+  if (G.showroomCar) G.showroomCar.userData.body.rotation.z = thr * Math.sin(G.clock * 60) * 0.004;
+}
+$('btnRev').onclick = () => startRev(CAR_ORDER[G.garageIndex]);
+
+// ---------- Taller ----------
+G.tuneCat = 'spoiler';
+function openTuning() {
+  const key = CAR_ORDER[G.garageIndex];
+  if (!save.owned.includes(key)) { toast('Compra el coche para tunearlo'); return; }
+  sound.click();
+  G.state = 'tuning';
+  renderTuning();
+  show('tuning');
+}
+function renderTuning() {
+  const key = CAR_ORDER[G.garageIndex];
+  const cur = getTuning(key);
+  $('tuneCar').textContent = CARS[key].name;
+  const tabs = $('tuneTabs');
+  tabs.innerHTML = '';
+  for (const cat of TUNING_ORDER) {
+    const b = document.createElement('button');
+    b.className = 'tab' + (cat === G.tuneCat ? ' sel' : '');
+    b.textContent = TUNING[cat].label;
+    b.onclick = () => { sound.click(); G.tuneCat = cat; renderTuning(); };
+    tabs.appendChild(b);
+  }
+  const box = $('tuneOptions');
+  box.innerHTML = '';
+  for (const o of TUNING[G.tuneCat].options) {
+    const owned = o.price === 0 || save.parts.includes(`${key}:${G.tuneCat}:${o.id}`);
+    const sel = cur[G.tuneCat] === o.id;
+    const b = document.createElement('button');
+    b.className = 'opt' + (owned ? ' owned' : '') + (sel ? ' sel' : '');
+    const dot = o.value && typeof o.value === 'string' ? `<span class="dot" style="background:${o.value}"></span>` : '';
+    b.innerHTML = `<b>${dot}${o.name}</b><small>${sel ? 'Montado' : owned ? 'Comprado' : `${o.price} monedas`}</small>`;
+    b.onclick = () => chooseTuning(key, G.tuneCat, o, owned);
+    box.appendChild(b);
+  }
+  $('tuneInfo').textContent = 'Las piezas se compran una vez por coche y luego puedes cambiarlas gratis.';
+  showShowroom(key, save.color);
+  refreshCoins();
+}
+function chooseTuning(key, cat, o, owned) {
+  if (!owned) {
+    if (save.coins < o.price) { sound.fail(); toast(`Te faltan ${o.price - save.coins} monedas`); return; }
+    save.coins -= o.price;
+    save.parts.push(`${key}:${cat}:${o.id}`);
+    sound.coin();
+    toast(`Comprado: ${o.name}`);
+  } else sound.click();
+  save.tuning[key] = { ...getTuning(key), [cat]: o.id };
+  persist();
+  renderTuning();
+}
+$('btnTune').onclick = openTuning;
+$('tuneBack').onclick = () => {
+  sound.click();
+  G.state = 'garage';
+  renderGarage();
+  show('garage');
+};
 
 let last = performance.now();
 function frame(now) {
@@ -586,6 +688,10 @@ const ADMIN_ACTIONS = {
   add100k: () => { save.coins += 100000; return '+100.000 monedas'; },
   million: () => { save.coins = 1000000; return 'Monedas: 1.000.000'; },
   cars: () => { save.owned = [...CAR_ORDER]; return 'Todos los coches desbloqueados'; },
+  parts: () => {
+    save.parts = CAR_ORDER.flatMap(k => TUNING_ORDER.flatMap(cat => TUNING[cat].options.map(o => `${k}:${cat}:${o.id}`)));
+    return 'Todas las piezas del taller desbloqueadas';
+  },
   levels: () => { LEVELS.forEach((_, i) => { save.stars[i] = 3; }); return 'Todos los niveles con 3 estrellas'; },
   god: () => { save.god = !save.god; return save.god ? 'Sin choques activado' : 'Sin choques desactivado'; },
 };
@@ -622,7 +728,7 @@ $('adminReset').onclick = () => {
   clearTimeout(resetArmed);
   resetArmed = null;
   b.textContent = 'Reiniciar partida';
-  Object.assign(save, { coins: 0, owned: ['sedan'], car: 'sedan', stars: {}, god: false });
+  Object.assign(save, { coins: 0, owned: ['sedan'], car: 'sedan', stars: {}, god: false, tuning: {}, parts: [] });
   persist();
   renderAdmin();
   showShowroom(save.car, save.color);

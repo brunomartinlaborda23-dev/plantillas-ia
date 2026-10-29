@@ -37,7 +37,9 @@ const cam = new THREE.PerspectiveCamera(32, W / H, 0.1, 100);
 const colors = ['#d62828', '#1d4ed8', '#f1f5f9', '#fcbf49', '#2a9d8f', '#64748b', '#f77f00', '#d62828'];
 
 keys.forEach((k, row) => {
-  const car = buildCar(k, colors[row % colors.length], { parked: params.has('parked') });
+  // ?t={"spoiler":"gt","kit":"wide"} aplica piezas del taller a todos los coches
+  const tuning = params.get('t') ? JSON.parse(params.get('t')) : null;
+  const car = buildCar(k, colors[row % colors.length], { parked: params.has('parked'), tuning });
   scene.add(car);
   views.forEach(([a, h], col) => {
     const d = 7.2;

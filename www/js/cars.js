@@ -5,6 +5,7 @@ import * as THREE from '../vendor/three.module.min.js';
 import { mergeGeometries, toCreasedNormals } from '../vendor/BufferGeometryUtils.js';
 import { TessellateModifier } from '../vendor/TessellateModifier.js';
 import { CARS } from './specs.js';
+import { DEFAULT_TUNING, tuningOption } from './tuning.js';
 
 const V2 = (p) => new THREE.Vector2(p[0], p[1]);
 const smooth = (a, b, t) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return x * x * (3 - 2 * x); };
@@ -284,8 +285,10 @@ const DESIGNS = {
       b.plates(0.36, 2.26, 0.5, -2.26);
       b.exhaust([[-0.5, 0.24, -2.22], [0.5, 0.24, -2.22]]);
       b.mirrors(0.92, 0.88, 0.7);
-      b.add(boxP(1.5, 0.04, 0.28, MAT.carbon, 0, 1.0, -2.0, 0.08, 0, 0));
-      for (const sx of [-1, 1]) b.add(boxP(0.05, 0.14, 0.1, MAT.carbon, sx * 0.5, 0.93, -2.0));
+      if (b.stockWing) {
+        b.add(boxP(1.5, 0.04, 0.28, MAT.carbon, 0, 1.0, -2.0, 0.08, 0, 0));
+        for (const sx of [-1, 1]) b.add(boxP(0.05, 0.14, 0.1, MAT.carbon, sx * 0.5, 0.93, -2.0));
+      }
     },
   },
   // Inspirado en un coupé deportivo alemán de altas prestaciones: capó largo, doble parrilla vertical, techo de carbono.
@@ -341,11 +344,13 @@ const DESIGNS = {
       for (const sx of [-1, 1]) b.add(boxP(0.24, 0.07, 0.05, b.brake, sx * 0.7, 0.78, -2.24));
       b.add(boxP(0.16, 0.05, 0.04, b.reverse, 0, 0.5, -2.31));
       // Alerón con cuello de cisne
-      b.add(boxP(1.78, 0.04, 0.44, MAT.carbon, 0, 1.36, -1.98, 0.1, 0, 0));
-      b.add(boxP(1.78, 0.025, 0.14, MAT.carbon, 0, 1.43, -1.82, -0.35, 0, 0));
-      for (const sx of [-1, 1]) {
-        b.add(boxP(0.03, 0.22, 0.56, MAT.carbon, sx * 0.89, 1.37, -1.97));
-        b.add(boxP(0.035, 0.46, 0.12, MAT.carbon, sx * 0.33, 1.15, -1.85, 0.35, 0, 0));
+      if (b.stockWing) {
+        b.add(boxP(1.78, 0.04, 0.44, MAT.carbon, 0, 1.36, -1.98, 0.1, 0, 0));
+        b.add(boxP(1.78, 0.025, 0.14, MAT.carbon, 0, 1.43, -1.82, -0.35, 0, 0));
+        for (const sx of [-1, 1]) {
+          b.add(boxP(0.03, 0.22, 0.56, MAT.carbon, sx * 0.89, 1.37, -1.97));
+          b.add(boxP(0.035, 0.46, 0.12, MAT.carbon, sx * 0.33, 1.15, -1.85, 0.35, 0, 0));
+        }
       }
       b.add(boxP(1.5, 0.16, 0.1, MAT.carbon, 0, 0.22, -2.28));
       b.exhaust([[-0.09, 0.32, -2.32], [0.09, 0.32, -2.32]], 0.055);
@@ -385,12 +390,82 @@ const DESIGNS = {
   },
 };
 
+// ---------- Piezas del taller ----------
+
+// Altura máxima de una polilínea [z, y] en la posición z (null si no la cruza).
+function heightAt(pts, z) {
+  let y = null;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [z0, y0] = pts[i], [z1, y1] = pts[i + 1];
+    if (z0 === z1 || z < Math.min(z0, z1) || z > Math.max(z0, z1)) continue;
+    const h = y0 + ((z - z0) / (z1 - z0)) * (y1 - y0);
+    y = y === null ? h : Math.max(y, h);
+  }
+  return y;
+}
+
+let glowTex = null;
+function neonTexture() {
+  if (glowTex) return glowTex;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 128;
+  const g = cv.getContext('2d');
+  const grd = g.createRadialGradient(64, 64, 8, 64, 64, 64);
+  grd.addColorStop(0, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.55, 'rgba(255,255,255,0.55)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 128, 128);
+  glowTex = new THREE.CanvasTexture(cv);
+  return glowTex;
+}
+
+function addTuning(b, s, d, t, paint) {
+  const front = d.top[0][0], rear = d.top[d.top.length - 1][0];
+  const c = d.cabin;
+  const cabinTop = [[c.from, c.base], ...c.top];
+
+  // Alerón: sobre el maletero o, si el habitáculo llega hasta atrás, en el borde del techo.
+  if (t.spoiler !== 'stock') {
+    const zs = rear + 0.38;
+    const ys = Math.max(heightAt(d.top, zs) ?? 0, heightAt(cabinTop, zs) ?? 0) + 0.01;
+    const span = Math.min(s.w * 0.95, 1.8);
+    if (t.spoiler === 'lip') b.add(boxP(s.w * 0.72, 0.025, 0.12, MAT.carbon, 0, ys + 0.025, zs - 0.16, 0.3, 0, 0));
+    if (t.spoiler === 'ducktail') b.add(boxP(s.w * 0.78, 0.06, 0.36, paint, 0, ys + 0.05, zs - 0.06, 0.22, 0, 0));
+    if (t.spoiler === 'gt') {
+      b.add(boxP(span, 0.04, 0.38, MAT.carbon, 0, ys + 0.42, zs - 0.05, 0.12, 0, 0));
+      for (const sx of [-1, 1]) {
+        b.add(boxP(0.03, 0.2, 0.46, MAT.carbon, sx * span / 2, ys + 0.42, zs - 0.05));
+        b.add(boxP(0.04, 0.42, 0.12, MAT.carbon, sx * span * 0.28, ys + 0.21, zs));
+      }
+    }
+  }
+
+  // Body kit: labio delantero, faldones, difusor; la carrocería ancha añade aletas en los pasos de rueda.
+  if (t.kit !== 'stock') {
+    b.add(boxP(s.w * 0.94, 0.025, 0.3, MAT.carbon, 0, d.clear, front - 0.1));
+    for (const sx of [-1, 1]) {
+      b.add(boxP(0.18, 0.02, 0.1, MAT.carbon, sx * s.w * 0.4, (heightAt(d.top, front - 0.1) ?? 0.4) * 0.6, front - 0.02, 0, sx * 0.4, 0));
+      b.add(boxP(0.05, 0.09, s.wb * 0.78, MAT.carbon, sx * (b.side(d.clear + 0.06, 0) + 0.015), d.clear + 0.045, 0));
+    }
+    b.add(boxP(s.w * 0.7, 0.1, 0.32, MAT.carbon, 0, d.clear + 0.03, rear + 0.14));
+    for (let i = -2; i <= 2; i++) b.add(boxP(0.015, 0.16, 0.34, MAT.carbon, i * s.w * 0.15, d.clear + 0.06, rear + 0.14));
+    if (t.kit === 'wide') {
+      const ar = s.wheelR + 0.08;
+      const flare = new THREE.TorusGeometry(ar, 0.075, 6, 20, Math.PI).scale(1, 1, 1.8).rotateY(Math.PI / 2);
+      for (const zw of [s.wb / 2, -s.wb / 2]) for (const sx of [-1, 1]) {
+        b.add(part(flare, paint, sx * (b.side(s.wheelR + 0.15, zw) + 0.02), s.wheelR, zw));
+      }
+    }
+  }
+}
+
 // ---------- Ensamblado ----------
 
 // Los coches aparcados del mismo modelo comparten geometría: se construye una plantilla
 // por modelo y cada copia solo cambia el material de la pintura.
 const parkedTemplates = {};
-export function buildCar(key, color, { parked = false } = {}) {
+export function buildCar(key, color, { parked = false, tuning = null } = {}) {
   if (parked) {
     const tpl = parkedTemplates[key] || (parkedTemplates[key] = buildCarMesh(key, '#ffffff', true));
     // clone() copia userData con JSON: lo vaciamos un momento porque contiene mallas.
@@ -404,10 +479,11 @@ export function buildCar(key, color, { parked = false } = {}) {
     car.userData = { spec: ud.spec, paint };
     return car;
   }
-  return buildCarMesh(key, color, false);
+  return buildCarMesh(key, color, false, tuning);
 }
 
-function buildCarMesh(key, color, parked) {
+function buildCarMesh(key, color, parked, tuning) {
+  const t = { ...DEFAULT_TUNING, ...tuning };
   const s = CARS[key] || CARS.sedan;
   const d = DESIGNS[key] || DESIGNS.sedan;
   const root = new THREE.Group();
@@ -430,6 +506,7 @@ function buildCarMesh(key, color, parked) {
   const deform = bodyDeform(s, d);
   const b = {
     brake, reverse,
+    stockWing: t.spoiler === 'stock',
     // Distancia al centro de la superficie lateral de la carrocería a esa altura y posición.
     side: (y, z) => s.w / 2 * deform(y, z),
     add: (m) => body.add(m),
@@ -451,14 +528,17 @@ function buildCarMesh(key, color, parked) {
     },
   };
   d.details(b);
+  addTuning(b, s, d, t, paint);
+  body.position.y = tuningOption('height', t.height).value;
 
   // Ruedas
-  const ws = d.wheel;
+  const ws = t.rims === 'stock' ? d.wheel : { ...d.wheel, rim: tuningOption('rims', t.rims).value };
+  const track = t.kit === 'wide' ? 0.05 : 0;
   const wheels = [], fronts = [];
   for (const sz of [1, -1]) for (const sx of [-1, 1]) {
     const wd = sz === -1 && (key === 'rs' || key === 'hyper') ? ws.w + 0.04 : ws.w;
     const wh = wheel(s, wd, ws);
-    wh.pivot.position.set(sx * (s.w / 2 - wd / 2 - 0.03), s.wheelR, sz * s.wb / 2);
+    wh.pivot.position.set(sx * (s.w / 2 - wd / 2 - 0.03 + track), s.wheelR, sz * s.wb / 2);
     // La cara exterior mira hacia +X: en el lado izquierdo se gira media vuelta.
     if (sx < 0) { wh.spin.rotation.y = Math.PI; wh.fixed.rotation.y = Math.PI; }
     wh.spin.userData.side = sx < 0 ? -1 : 1;
@@ -475,6 +555,17 @@ function buildCarMesh(key, color, parked) {
     // Cada rueda gira por separado; el disco y la pinza (grupo fijo) se fusionan aparte.
     for (const w of wheels) { w.userData.keep = false; bake(w); w.userData.keep = true; }
     for (const p of root.children) if (p !== body) p.children.forEach(ch => { if (!ch.userData.keep) bake(ch); });
+  }
+
+  // Neón bajo el coche: un halo de color en el suelo.
+  if (t.neon !== 'stock') {
+    const glow = new THREE.Mesh(
+      new THREE.PlaneGeometry(s.w * 1.7, s.l * 1.2).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ color: tuningOption('neon', t.neon).value, map: neonTexture(), transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }),
+    );
+    glow.position.y = 0.03;
+    glow.renderOrder = 1;
+    root.add(glow);
   }
 
   root.userData = { spec: s, wheels, fronts, body, paint, brakeMat: brake, revMat: reverse };

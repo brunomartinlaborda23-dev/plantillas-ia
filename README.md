@@ -31,12 +31,32 @@ Hecho con **Three.js** (gráficos 3D) y empaquetado para iOS con **Capacitor**. 
   luces de freno y marcha atrás, 4 cámaras (y arrastrar en pantalla para girar la vista).
 - Estrellas según el tiempo, monedas, progreso guardado en el dispositivo, sonidos sintetizados.
 
+## Taller y sonido de motor
+
+- **Taller** (Garaje → 🔧 Taller): cada coche se tunea por separado. Las piezas se compran una vez por coche
+  y luego se cambian gratis.
+
+  | Categoría | Opciones (precio en monedas) |
+  |---|---|
+  | Alerón | Labio 300 · Cola de pato 700 · Alerón GT 1.500 |
+  | Body kit | Deportivo 1.200 (labio, faldones, difusor) · Carrocería ancha 3.000 (aletas y vías más anchas) |
+  | Llantas | Negras 250 · Blancas 250 · Rojas 300 · Doradas 400 · Cromadas 500 |
+  | Suspensión | Rebajada 800 · Muy rebajada 1.500 |
+  | Neón | Azul, morado, verde, rojo o blanco · 500 |
+
+- **Motor propio de cada coche** (Garaje → 🔊 Escuchar motor para oír arranque y acelerones):
+  Berlina y Compacto 4 cilindros · Todoterreno V6 · Pick-up V8 atmosférico · Deportivo V6 biturbo ·
+  Vector CS 6 en línea biturbo · Strada RS bóxer 6 atmosférico a 9.000 rpm · Fulmine HY V12 híbrido.
+  El sonido se sintetiza en tiempo real (`www/js/engine-sound.js`): armónicos propios de cada motor,
+  irregularidad del ralentí, distorsión de escape, admisión, silbido y soplido de turbo, petardeos al
+  soltar el gas y zumbido eléctrico en el híbrido. No usa grabaciones.
+
 ## Modo admin
 
 Toca **5 veces seguidas el título** "PARKING PRO 3D" del menú (o abre el juego con `#admin` al final del
 enlace) e introduce el PIN. **El PIN inicial es `1234`**: cámbialo desde el propio panel.
 Desde el panel puedes sumar monedas, darte todos los coches, desbloquear todos los niveles con 3 estrellas,
-activar el modo sin choques y reiniciar la partida.
+activar el modo sin choques, darte todas las piezas del taller y reiniciar la partida.
 
 > El PIN se guarda en el dispositivo y protege el panel de jugadores normales, pero no es seguridad real:
 > alguien con conocimientos técnicos podría saltárselo. Para un juego sin compras con dinero real es suficiente.
@@ -95,6 +115,8 @@ www/                 Juego (lo que se empaqueta en la app)
   js/cars.js         Modelos 3D de los coches (perfiles de carrocería, ruedas, detalles)
   js/specs.js        Datos de cada coche: medidas reales, potencia, precio, agarre, motor
   js/effects.js      Caja de cambios, suspensión y marcas de neumático
+  js/engine-sound.js Sintetizador de motor (un sonido por tipo de motor)
+  js/tuning.js       Catálogo y precios del taller
   js/world.js        Escenario 3D
   js/controls.js     Volante, pedales y teclado
   js/audio.js        Sonidos

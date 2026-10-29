@@ -59,6 +59,25 @@
       </div>
       <div id="colorRow"></div>
       <button class="btn big primary" id="carAction"></button>
+      <div class="garage-extra">
+        <button class="btn" id="btnTune">🔧 Taller</button>
+        <button class="btn" id="btnRev">🔊 Escuchar motor</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Taller: piezas para el coche que estás viendo en el garaje -->
+  <div id="tuning" class="screen hidden">
+    <div class="bar">
+      <button class="btn small" id="tuneBack">← Garaje</button>
+      <h2>Taller</h2>
+      <div class="coins"><span class="coin-ico"></span><span class="coinCount">0</span></div>
+    </div>
+    <div class="garage-bottom tune-panel">
+      <h3 id="tuneCar"></h3>
+      <div id="tuneTabs"></div>
+      <div id="tuneOptions"></div>
+      <p id="tuneInfo"></p>
     </div>
   </div>
 
@@ -133,6 +152,7 @@
           <button class="btn" data-admin="add100k">+100.000 monedas</button>
           <button class="btn" data-admin="million">Poner 1.000.000</button>
           <button class="btn" data-admin="cars">Dar todos los coches</button>
+          <button class="btn" data-admin="parts">Dar todas las piezas</button>
           <button class="btn" data-admin="levels">Desbloquear niveles ★★★</button>
           <button class="btn" data-admin="god" id="adminGod"></button>
         </div>

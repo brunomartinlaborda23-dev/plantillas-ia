@@ -238,3 +238,31 @@ html, body {
 #admin input:focus { outline: none; border-color: var(--accent); }
 .btn.danger { background: linear-gradient(#ef4444, #a11d1d); }
 .btn.on-state { background: linear-gradient(#22c55e, #15803d); }
+
+/* Taller */
+.garage-extra { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.garage-extra .btn { font-size: 15px; }
+.tune-panel { gap: 12px; }
+#tuneCar { margin: 0; font-size: 22px; font-style: italic; }
+#tuneTabs { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.tab {
+  font: inherit; font-weight: 800; font-size: 13px; color: var(--muted); cursor: pointer;
+  background: transparent; border: 2px solid rgba(255, 255, 255, 0.15); border-radius: 999px; padding: 6px 12px;
+}
+.tab.sel { color: #1a1300; background: var(--accent); border-color: var(--accent); }
+#tuneOptions { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; width: 100%; }
+.opt {
+  font: inherit; color: var(--text); cursor: pointer; text-align: left;
+  background: linear-gradient(#323a49, #222833); border: 2px solid rgba(255, 255, 255, 0.1); border-radius: 12px;
+  padding: 8px 10px; display: flex; flex-direction: column; gap: 2px;
+}
+.opt b { font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.opt small { color: var(--accent); font-weight: 800; font-size: 12px; }
+.opt.owned small { color: var(--ok); }
+.opt.sel { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(255, 180, 0, 0.35); }
+.opt.sel small { color: var(--text); }
+.opt .dot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.4); flex: none; }
+#tuneInfo { color: var(--muted); font-weight: 600; font-size: 13px; margin: 0; text-align: center; }
+@media (orientation: landscape) {
+  #tuning .garage-bottom { width: 360px; justify-content: flex-start; }
+}

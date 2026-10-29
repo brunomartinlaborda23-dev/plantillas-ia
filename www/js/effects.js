@@ -7,7 +7,8 @@ export class Drivetrain {
   constructor(engine) {
     this.e = engine;
     this.gear = 0;
-    this.rpm = engine.idle;
+    this.rpm = 0;
+    this.startT = 0; // segundos desde el arranque
   }
 
   // Devuelve true si acaba de cambiar de marcha.
@@ -20,6 +21,13 @@ export class Drivetrain {
     this.gear = g;
     let target = e.idle + (e.red - e.idle) * Math.min(1, sp / e.gears[g]);
     if (sp < 0.5) target = e.idle + throttle * (e.red - e.idle) * 0.3;
+    // Arranque: el motor de arranque gira a ~250 rpm y luego el motor "sube" y se asienta al ralentí.
+    if (this.startT < 1.6) {
+      this.startT += dt;
+      const t = this.startT;
+      if (t < 0.55) target = 250;
+      else target = Math.max(target, e.idle * (1 + 1.1 * Math.exp(-(t - 0.55) * 4)));
+    }
     this.rpm += (target - this.rpm) * Math.min(1, dt * (shifted ? 20 : 7));
     return shifted;
   }

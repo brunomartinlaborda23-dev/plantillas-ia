@@ -1,8 +1,11 @@
 // Sonidos sintetizados con WebAudio (no hacen falta archivos de audio).
+import { EngineSound } from './engine-sound.js';
+
 export class Sound {
   constructor() {
     this.ctx = null;
     this.muted = false;
+    this.voice = 'i4';
   }
 
   // Debe llamarse tras un toque del usuario (requisito de iOS).
@@ -18,21 +21,8 @@ export class Sound {
     this.master.gain.value = this.muted ? 0 : 0.6;
     this.master.connect(ctx.destination);
 
-    this.osc = ctx.createOscillator();
-    this.osc.type = 'sawtooth';
-    this.osc2 = ctx.createOscillator();
-    this.osc2.type = 'square';
-    this.filter = ctx.createBiquadFilter();
-    this.filter.type = 'lowpass';
-    this.filter.frequency.value = 380;
-    this.engGain = ctx.createGain();
-    this.engGain.gain.value = 0;
-    this.osc.connect(this.filter);
-    this.osc2.connect(this.filter);
-    this.filter.connect(this.engGain);
-    this.engGain.connect(this.master);
-    this.osc.start();
-    this.osc2.start();
+    this.eng = new EngineSound(ctx, this.master);
+    this.eng.setVoice(this.voice);
 
     // Chirrido de neumáticos: ruido en bucle por un filtro paso banda.
     const len = ctx.sampleRate * 2;
@@ -59,25 +49,18 @@ export class Sound {
     if (this.master) this.master.gain.value = m ? 0 : 0.6;
   }
 
-  // rpm: revoluciones; cyl: pulsos por vuelta (4 cil. = 2, V8 = 4, V12 = 6...).
-  engine(on, rpm, throttle, cyl = 2) {
-    if (!this.ctx) return;
-    const t = this.ctx.currentTime;
-    const f = (rpm / 60) * cyl * 0.5;
-    this.osc.frequency.setTargetAtTime(f, t, 0.03);
-    this.osc2.frequency.setTargetAtTime(f * 0.5, t, 0.03);
-    this.filter.frequency.setTargetAtTime(250 + throttle * 900 + rpm * 0.12, t, 0.05);
-    this.engGain.gain.setTargetAtTime(on ? 0.035 + throttle * 0.05 + rpm / 200000 : 0, t, 0.08);
+  // Cambia el tipo de motor (ver VOICES en engine-sound.js).
+  setEngine(voice) {
+    this.voice = voice;
+    this.eng?.setVoice(voice);
   }
 
-  // Breve corte de gas al cambiar de marcha.
-  shift() {
-    if (!this.ctx) return;
-    const g = this.engGain.gain, t = this.ctx.currentTime;
-    g.cancelScheduledValues(t);
-    g.setValueAtTime(0.01, t);
-    g.linearRampToValueAtTime(0.06, t + 0.15);
+  engine(on, rpm, throttle, red = 6500) {
+    this.eng?.update(on, rpm, red, throttle);
   }
+
+  shift() { this.eng?.shift(); }
+  starter() { this.eng?.starter(); }
 
   squeal(amount) {
     if (!this.ctx) return;
