@@ -65,6 +65,11 @@ activar el modo sin choques, darte todas las piezas del taller y reiniciar la pa
 > El PIN se guarda en el dispositivo y protege el panel de jugadores normales, pero no es seguridad real:
 > alguien con conocimientos técnicos podría saltárselo. Para un juego sin compras con dinero real es suficiente.
 
+## Versión para Roblox
+
+En la carpeta [`roblox/`](roblox/README.md) está el juego adaptado a Roblox (multijugador en la ciudad), con los
+coches exportados en 3D y los sonidos de motor. Allí tienes la guía paso a paso.
+
 ## Probarlo en el navegador
 
 ```bash
@@ -121,6 +126,8 @@ www/                 Juego (lo que se empaqueta en la app)
   js/effects.js      Caja de cambios, suspensión y marcas de neumático
   js/engine-sound.js Sintetizador de motor (un sonido por tipo de motor)
   js/tuning.js       Catálogo y precios del taller
+roblox/              Versión para Roblox (ver roblox/README.md)
+tools/               Generadores: datos y lugar de Roblox, exportar coches (.glb) y grabar motores
   js/world.js        Escenario 3D
   js/controls.js     Volante, pedales y teclado
   js/audio.js        Sonidos

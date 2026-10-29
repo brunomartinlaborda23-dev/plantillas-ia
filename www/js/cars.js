@@ -10,7 +10,7 @@ import { DEFAULT_TUNING, tuningOption } from './tuning.js';
 const V2 = (p) => new THREE.Vector2(p[0], p[1]);
 const smooth = (a, b, t) => { const x = Math.min(1, Math.max(0, (t - a) / (b - a))); return x * x * (3 - 2 * x); };
 
-const MAT = {
+export const MAT = {
   tire: new THREE.MeshStandardMaterial({ color: 0x161616, roughness: 0.95 }),
   black: new THREE.MeshStandardMaterial({ color: 0x0e0f11, roughness: 0.55 }),
   carbon: new THREE.MeshStandardMaterial({ color: 0x15171a, metalness: 0.4, roughness: 0.35 }),
@@ -82,6 +82,33 @@ function tessellateCaps(g) {
   }
   g.dispose();
   return mergeGeometries(parts);
+}
+
+// Aleta o abombado: perfil propio extruido con poca anchura y bordes muy redondeados.
+// Sirve para las aletas que sobresalen por encima del capó (911, hiperdeportivo) o el
+// abombado central del capó. top: línea superior de delante a atrás; base: altura oculta.
+function fenderGeo(f, s) {
+  // La parte de abajo sigue el arco del paso de rueda para no tapar las ruedas.
+  const ar = s.wheelR + 0.1;
+  const bottom = (z) => {
+    let y = f.base;
+    for (const cz of [-s.wb / 2, s.wb / 2]) {
+      const dz = z - cz;
+      if (Math.abs(dz) < ar) y = Math.max(y, s.wheelR + Math.sqrt(ar * ar - dz * dz));
+    }
+    return y;
+  };
+  const z0 = f.top[0][0], z1 = f.top[f.top.length - 1][0];
+  const sh = new THREE.Shape();
+  sh.moveTo(z1, bottom(z1));
+  for (let i = 1; i <= 24; i++) {
+    const z = z1 + ((z0 - z1) * i) / 24;
+    sh.lineTo(z, bottom(z));
+  }
+  sh.splineThru(f.top.map(V2));
+  sh.closePath();
+  const peak = Math.max(...f.top.map(p => p[1]));
+  return extrude(sh, f.w, { bevel: f.bevel ?? 0.1, curve: 8, deform: (y) => 1 - (f.tumble ?? 0.3) * smooth(f.base, peak + 0.02, y) });
 }
 
 function bodyDeform(s, d) {
@@ -296,6 +323,10 @@ const DESIGNS = {
     clear: 0.14, belt: 0.95, nose: 0.12, tail: 0.09, tumble: 0.12,
     top: [[2.4, 0.2], [2.43, 0.42], [2.38, 0.62], [2.15, 0.74], [1.7, 0.8], [1.2, 0.86], [0.9, 0.89], [0, 0.93], [-1.0, 0.96], [-1.6, 1.0], [-2.15, 1.01], [-2.38, 0.98], [-2.42, 0.7], [-2.4, 0.35], [-2.38, 0.2]],
     cabin: { w: 1.52, base: 0.86, from: 0.95, tumble: 0.17, roofFrom: 0.86, roof: 'carbon', top: [[0.6, 1.05], [0.2, 1.3], [-0.2, 1.38], [-0.7, 1.38], [-1.1, 1.3], [-1.5, 1.1], [-1.75, 0.99]] },
+    fenders: [
+      { x: 0, w: 0.62, base: 0.6, tumble: 0.45, bevel: 0.1, top: [[2.05, 0.75], [1.7, 0.83], [1.3, 0.89], [1.0, 0.91]] },
+      { x: 0.76, w: 0.36, base: 0.6, tumble: 0.4, top: [[-0.6, 0.94], [-1.1, 1.0], [-1.7, 1.03], [-2.15, 1.02]] },
+    ],
     wheel: { rim: '#8a6d3b', spokes: 10, caliper: '#c1121f', w: 0.27 },
     details: (b) => {
       // Doble parrilla vertical con marco cromado
@@ -328,12 +359,18 @@ const DESIGNS = {
     clear: 0.14, belt: 0.9, nose: 0.14, tail: 0.08, tumble: 0.16,
     top: [[2.285, 0.2], [2.3, 0.36], [2.22, 0.5], [1.95, 0.62], [1.55, 0.76], [1.2, 0.83], [0.7, 0.85], [0, 0.85], [-0.8, 0.89], [-1.4, 0.93], [-1.9, 0.93], [-2.2, 0.87], [-2.3, 0.66], [-2.3, 0.3], [-2.285, 0.18]],
     cabin: { w: 1.4, base: 0.8, from: 0.88, tumble: 0.2, roofFrom: 0.86, top: [[0.55, 0.98], [0.2, 1.2], [-0.15, 1.3], [-0.6, 1.29], [-1.1, 1.17], [-1.6, 1.01], [-2.0, 0.91]] },
+    fenders: [
+      { x: 0.68, w: 0.5, base: 0.45, tumble: 0.35, top: [[2.18, 0.52], [1.98, 0.7], [1.65, 0.85], [1.25, 0.92], [0.9, 0.9], [0.6, 0.84]] },
+      { x: 0.7, w: 0.52, base: 0.6, tumble: 0.35, top: [[-0.25, 0.85], [-0.8, 0.97], [-1.3, 1.01], [-1.8, 0.99], [-2.1, 0.91], [-2.24, 0.8]] },
+    ],
     wheel: { rim: '#c9ccd1', spokes: 10, caliper: '#e5b80b', w: 0.28 },
     details: (b) => {
       // Faros redondos sobre las aletas delanteras
       for (const sx of [-1, 1]) {
-        b.add(part(new THREE.CylinderGeometry(0.12, 0.12, 0.08, 24).scale(1, 1, 1.25), MAT.head, sx * 0.6, 0.66, 1.98, Math.PI / 2 - 0.6, 0, 0));
-        b.add(part(new THREE.TorusGeometry(0.12, 0.012, 6, 24).scale(1, 1.25, 1), MAT.black, sx * 0.6, 0.665, 2.01, -0.6, 0, 0));
+        b.add(part(new THREE.CylinderGeometry(0.12, 0.12, 0.08, 24).scale(1, 1, 1.25), MAT.head, sx * 0.68, 0.76, 1.93, Math.PI / 2 - 0.75, 0, 0));
+        b.add(part(new THREE.TorusGeometry(0.12, 0.014, 6, 24).scale(1, 1.25, 1), MAT.black, sx * 0.68, 0.765, 1.96, -0.75, 0, 0));
+        // pequeñas luces LED bajo los faros
+        b.add(boxP(0.16, 0.025, 0.05, MAT.head, sx * 0.66, 0.42, 2.25));
         b.add(boxP(0.34, 0.09, 0.04, MAT.black, sx * 0.62, 0.3, 2.28));
       }
       b.add(boxP(0.9, 0.16, 0.04, MAT.black, 0, 0.3, 2.3));
@@ -364,6 +401,10 @@ const DESIGNS = {
     clear: 0.11, belt: 0.85, nose: 0.2, tail: 0.1, tumble: 0.14,
     top: [[2.33, 0.16], [2.4, 0.3], [2.3, 0.42], [2.0, 0.53], [1.65, 0.7], [1.32, 0.82], [0.95, 0.8], [0.5, 0.74], [0, 0.76], [-0.6, 0.84], [-1.3, 0.87], [-1.9, 0.87], [-2.25, 0.81], [-2.36, 0.64], [-2.36, 0.3], [-2.33, 0.16]],
     cabin: { w: 1.36, base: 0.7, from: 1.05, tumble: 0.24, roofFrom: 0.8, roof: 'black', top: [[0.7, 0.9], [0.3, 1.06], [-0.1, 1.12], [-0.6, 1.1], [-1.1, 0.98], [-1.6, 0.9], [-2.0, 0.86]] },
+    fenders: [
+      { x: 0.74, w: 0.44, base: 0.35, tumble: 0.4, top: [[2.28, 0.4], [2.02, 0.6], [1.68, 0.8], [1.35, 0.9], [1.0, 0.85], [0.72, 0.76]] },
+      { x: 0.72, w: 0.5, base: 0.5, tumble: 0.35, top: [[0.25, 0.76], [-0.35, 0.89], [-1.05, 0.97], [-1.7, 0.96], [-2.15, 0.87], [-2.3, 0.74]] },
+    ],
     wheel: { rim: '#1e1f22', spokes: 5, split: true, caliper: '#e5b80b', w: 0.28 },
     details: (b) => {
       b.add(boxP(1.85, 0.03, 0.34, MAT.carbon, 0, 0.12, 2.25));
@@ -500,6 +541,11 @@ function buildCarMesh(key, color, parked, tuning) {
   const c = d.cabin;
   body.add(part(cabinGeo(c), MAT.glass));
   body.add(part(roofGeo(c), c.roof === 'carbon' ? MAT.carbon : c.roof === 'black' ? MAT.black : paint));
+  // Aletas elevadas y abombados (x = 0 para piezas centrales, si no van a ambos lados)
+  for (const f of d.fenders || []) {
+    const g = fenderGeo(f, s);
+    for (const sx of f.x ? [-1, 1] : [0]) body.add(part(g, paint, sx * f.x, 0, 0));
+  }
   // Bajos negros entre ruedas
   body.add(boxP(s.w * 0.92, 0.08, s.wb * 0.7, MAT.black, 0, d.clear + 0.03, 0));
 

@@ -1,0 +1,14 @@
+{
+  "name": "ParkingPro3D",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "ParkingShared": { "$path": "src/ReplicatedStorage/ParkingShared" },
+      "Cars": { "$className": "Folder" }
+    },
+    "ServerScriptService": { "$path": "src/ServerScriptService" },
+    "StarterPlayer": {
+      "StarterPlayerScripts": { "$path": "src/StarterPlayer/StarterPlayerScripts" }
+    }
+  }
+}

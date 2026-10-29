@@ -1,0 +1,3070 @@
+<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd" version="4"><Item class="ReplicatedStorage" referent="RBX00000006"><Properties><string name="Name">ReplicatedStorage</string></Properties><Item class="Folder" referent="RBX00000005"><Properties><string name="Name">ParkingShared</string></Properties><Item class="ModuleScript" referent="RBX00000000"><Properties><string name="Name">CarBuilder</string><ProtectedString name="Source"><![CDATA[-- Monta un coche a partir de su modelo 3D (ReplicatedStorage.Cars.<clave>, importado desde
+-- roblox/models/<clave>.glb). Si el modelo aún no está importado, crea uno sencillo de bloques
+-- para que el juego funcione igualmente.
+-- Estructura del coche:
+--   Model <clave>
+--     Chassis   caja invisible con la física (PrimaryPart)
+--     Hitbox    un poco mayor que Chassis, para detectar roces en los niveles
+--     Seat      asiento del conductor
+--     Visual    piezas del modelo (Body, Glass, Tire_FL, Rim_FL...)
+--     Knuckle_XX / Hub_XX: ejes invisibles de cada rueda (Motor6D Steer_XX y Spin_XX)
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Shared = script.Parent
+local Config = require(Shared.Config)
+local GameData = require(Shared.GameData)
+
+local S = Config.SCALE
+local CarBuilder = {}
+CarBuilder.WHEELS = { "FL", "FR", "RL", "RR" }
+
+-- Aspecto de cada pieza según su nombre.
+local STYLE = {
+	Glass = { color = Color3.fromRGB(26, 36, 48), material = Enum.Material.Glass, reflectance = 0.25 },
+	Trim = { color = Color3.fromRGB(14, 15, 17), material = Enum.Material.SmoothPlastic },
+	Carbon = { color = Color3.fromRGB(28, 30, 34), material = Enum.Material.Metal },
+	Chrome = { color = Color3.fromRGB(225, 229, 234), material = Enum.Material.Metal, reflectance = 0.4 },
+	Headlights = { color = Color3.fromRGB(240, 244, 255), material = Enum.Material.Neon },
+	Indicators = { color = Color3.fromRGB(255, 154, 26), material = Enum.Material.Neon },
+	Plates = { color = Color3.fromRGB(242, 242, 242), material = Enum.Material.SmoothPlastic },
+	Taillights = { color = Color3.fromRGB(120, 0, 0), material = Enum.Material.Neon },
+	ReverseLights = { color = Color3.fromRGB(110, 110, 110), material = Enum.Material.SmoothPlastic },
+	Tire = { color = Color3.fromRGB(22, 22, 22), material = Enum.Material.SmoothPlastic },
+	Disc = { color = Color3.fromRGB(107, 110, 115), material = Enum.Material.Metal },
+}
+
+-- El importador de Roblox a veces mete cada malla dentro de un Model con el nombre del nodo.
+local function pieceName(part)
+	local n = part.Name
+	if (n == "MeshPart" or n == "Mesh" or n == "Part") and part.Parent then n = part.Parent.Name end
+	return n
+end
+CarBuilder.pieceName = pieceName
+
+local function kind(name)
+	return string.match(name, "^(%a+)") or name
+end
+
+function CarBuilder.hexToColor(hex)
+	local r, g, b = string.match(hex or "", "#(%x%x)(%x%x)(%x%x)")
+	if not r then return Color3.fromRGB(214, 40, 40) end
+	return Color3.fromRGB(tonumber(r, 16), tonumber(g, 16), tonumber(b, 16))
+end
+
+local function tuningOption(cat, id)
+	local opts = GameData.TUNING[cat].options
+	for _, o in ipairs(opts) do
+		if o.id == id then return o end
+	end
+	return opts[1]
+end
+CarBuilder.tuningOption = tuningOption
+
+local function newPart(props)
+	local p = Instance.new("Part")
+	p.Anchored = true
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	for k, v in pairs(props) do p[k] = v end
+	return p
+end
+
+-- Coche de bloques (solo si falta el modelo importado).
+local function fallbackVisual(spec)
+	local m = Instance.new("Model")
+	local w, l, h, r = spec.w * S, spec.l * S, spec.h * S, spec.wheelR * S
+	local base = r * 0.55
+	newPart({ Name = "Body", Size = Vector3.new(w, h * 0.42, l), CFrame = CFrame.new(0, base + h * 0.21, 0), Parent = m })
+	newPart({ Name = "Glass", Size = Vector3.new(w * 0.84, h * 0.4, l * 0.5), CFrame = CFrame.new(0, base + h * 0.62, l * 0.04), Parent = m })
+	for _, sx in ipairs({ -1, 1 }) do
+		newPart({ Name = "Headlights", Size = Vector3.new(w * 0.22, h * 0.07, 0.1), CFrame = CFrame.new(sx * w * 0.3, base + h * 0.33, -l / 2), Parent = m })
+		newPart({ Name = "Taillights", Size = Vector3.new(w * 0.24, h * 0.07, 0.1), CFrame = CFrame.new(sx * w * 0.3, base + h * 0.33, l / 2), Parent = m })
+	end
+	for _, pos in ipairs(CarBuilder.WHEELS) do
+		local x = (string.sub(pos, 2, 2) == "L" and -1 or 1) * (w / 2 - 0.4)
+		local z = (string.sub(pos, 1, 1) == "F" and -1 or 1) * spec.wb * S / 2
+		newPart({ Name = "Tire_" .. pos, Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.7, r * 2, r * 2), CFrame = CFrame.new(x, r, z), Parent = m })
+		newPart({ Name = "Rim_" .. pos, Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.75, r * 1.3, r * 1.3), CFrame = CFrame.new(x, r, z), Parent = m })
+	end
+	return m
+end
+
+-- Copia del modelo importado, escalada a las medidas reales del coche y con el suelo en y = 0.
+local function templateVisual(key, spec)
+	local folder = ReplicatedStorage:FindFirstChild("Cars")
+	local t = folder and folder:FindFirstChild(key)
+	if not t then return nil end
+	local m = t:Clone()
+	if m:IsA("BasePart") then
+		local wrap = Instance.new("Model")
+		m.Parent = wrap
+		m = wrap
+	end
+	for _, p in ipairs(m:GetDescendants()) do
+		if p:IsA("BasePart") then p.Anchored = true end
+	end
+	if Config.MODEL_YAW_FIX and Config.MODEL_YAW_FIX ~= 0 then
+		m:PivotTo(m:GetPivot() * CFrame.Angles(0, math.rad(Config.MODEL_YAW_FIX), 0))
+	end
+	local _, size = m:GetBoundingBox()
+	-- El modelo incluye retrovisores y paragolpes: mide ~3,4 % más que el largo oficial.
+	local factor = (spec.l * S * 1.034) / math.max(size.Z, 0.01)
+	m:ScaleTo(m:GetScale() * factor)
+	local cf2, size2 = m:GetBoundingBox()
+	m:TranslateBy(Vector3.new(-cf2.X, -(cf2.Y - size2.Y / 2), -cf2.Z))
+	return m
+end
+
+local function style(visual, key, opts)
+	local paint = opts.color or Color3.fromRGB(214, 40, 40)
+	local rim = Config.RIM_COLORS[key] or Color3.fromRGB(190, 195, 200)
+	if opts.rims and opts.rims ~= "stock" then rim = CarBuilder.hexToColor(tuningOption("rims", opts.rims).value) end
+	local caliper = Config.CALIPER_COLORS[key] or Color3.fromRGB(58, 61, 66)
+	for _, p in ipairs(visual:GetDescendants()) do
+		if p:IsA("BasePart") then
+			local name = pieceName(p)
+			local k = kind(name)
+			local st = STYLE[k]
+			if k == "Body" then
+				p.Color = paint
+				p.Material = Enum.Material.SmoothPlastic
+				p.Reflectance = 0.08
+			elseif k == "Rim" then
+				p.Color = rim
+				p.Material = Enum.Material.Metal
+				p.Reflectance = 0.2
+			elseif k == "Caliper" then
+				p.Color = caliper
+				p.Material = Enum.Material.SmoothPlastic
+			elseif st then
+				p.Color = st.color
+				p.Material = st.material
+				p.Reflectance = st.reflectance or 0
+			end
+			if p:IsA("MeshPart") then p.TextureID = "" end
+			p:SetAttribute("Piece", name)
+		end
+	end
+end
+
+-- opts: color (Color3), rims, height, neon (ids del taller), parked (bool)
+function CarBuilder.build(key, opts)
+	opts = opts or {}
+	local spec = GameData.CARS[key] or GameData.CARS.sedan
+	local car = Instance.new("Model")
+	car.Name = key
+	car:SetAttribute("CarKey", key)
+
+	local visual = templateVisual(key, spec) or fallbackVisual(spec)
+	visual.Name = "Visual"
+	style(visual, key, opts)
+	visual.Parent = car
+
+	local w, l, h = spec.w * S, spec.l * S, spec.h * S
+	local chassis = newPart({
+		Name = "Chassis", Size = Vector3.new(w * 0.98, h * 0.62, l * 0.98),
+		CFrame = CFrame.new(0, h * 0.31, 0), Transparency = 1, CanCollide = true,
+		CustomPhysicalProperties = PhysicalProperties.new(0.6, 0.1, 0, 1, 1),
+	})
+	chassis.Parent = car
+	car.PrimaryPart = chassis
+
+	local parts = {}
+	for _, p in ipairs(visual:GetDescendants()) do
+		if p:IsA("BasePart") then table.insert(parts, p) end
+	end
+
+	if opts.parked then
+		for _, p in ipairs(parts) do
+			p.CanCollide = false
+			p.CanQuery = false
+			p.CanTouch = false
+		end
+		return car
+	end
+
+	-- Suspensión rebajada: baja la carrocería, no las ruedas.
+	local drop = 0
+	if opts.height and opts.height ~= "stock" then drop = -(tuningOption("height", opts.height).value or 0) * S end
+
+	for _, p in ipairs(parts) do
+		p.CanCollide = false
+		p.CanQuery = false
+		p.CanTouch = false
+		p.Massless = true
+		local k = kind(pieceName(p))
+		if drop > 0 and k ~= "Tire" and k ~= "Rim" and k ~= "Disc" and k ~= "Caliper" then
+			p.CFrame = p.CFrame - Vector3.new(0, drop, 0)
+		end
+	end
+
+	local hitbox = newPart({
+		Name = "Hitbox", Size = chassis.Size + Vector3.new(0.3, 0.3, 0.3), CFrame = chassis.CFrame,
+		Transparency = 1, CanCollide = false, CanTouch = false, CanQuery = false, Massless = true,
+	})
+	hitbox.Parent = car
+
+	local seat = Instance.new("Seat")
+	seat.Name = "Seat"
+	seat.Size = Vector3.new(2, 0.4, 2)
+	seat.CFrame = CFrame.new(-w * 0.2, h * 0.18, l * 0.02)
+	seat.Transparency = 1
+	seat.CanCollide = false
+	seat.Massless = true
+	seat.Anchored = true
+	seat.Parent = car
+
+	-- Ruedas: Knuckle (dirección) -> Hub (giro). Neumático y llanta van en el Hub; disco y pinza en el Knuckle.
+	local wheelParts = {}
+	for _, p in ipairs(parts) do
+		local name = pieceName(p)
+		local k, pos = string.match(name, "^(%a+)_(%u%u)$")
+		if k and pos then
+			wheelParts[pos] = wheelParts[pos] or {}
+			table.insert(wheelParts[pos], { part = p, kind = k })
+		end
+	end
+	for _, pos in ipairs(CarBuilder.WHEELS) do
+		local list = wheelParts[pos]
+		local center
+		if list then
+			for _, e in ipairs(list) do
+				if e.kind == "Tire" then center = e.part.Position end
+			end
+		end
+		if center then
+			local knuckle = newPart({ Name = "Knuckle_" .. pos, Size = Vector3.new(0.2, 0.2, 0.2), CFrame = CFrame.new(center), Transparency = 1, CanCollide = false, CanQuery = false, CanTouch = false, Massless = true })
+			local hub = newPart({ Name = "Hub_" .. pos, Size = Vector3.new(0.2, 0.2, 0.2), CFrame = CFrame.new(center), Transparency = 1, CanCollide = false, CanQuery = false, CanTouch = false, Massless = true })
+			knuckle.Parent = car
+			hub.Parent = car
+			local steer = Instance.new("Motor6D")
+			steer.Name = "Steer_" .. pos
+			steer.Part0 = chassis
+			steer.Part1 = knuckle
+			steer.C0 = chassis.CFrame:ToObjectSpace(CFrame.new(center))
+			steer:SetAttribute("BaseC0", steer.C0)
+			steer.Parent = chassis
+			local spin = Instance.new("Motor6D")
+			spin.Name = "Spin_" .. pos
+			spin.Part0 = knuckle
+			spin.Part1 = hub
+			spin.Parent = knuckle
+			for _, e in ipairs(list) do
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0 = (e.kind == "Tire" or e.kind == "Rim") and hub or knuckle
+				weld.Part1 = e.part
+				weld.Parent = e.part
+				e.part:SetAttribute("Wheel", true)
+			end
+		end
+	end
+
+	-- El resto de piezas va soldado al chasis.
+	for _, p in ipairs(parts) do
+		if not p:GetAttribute("Wheel") then
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = chassis
+			weld.Part1 = p
+			weld.Parent = p
+		end
+	end
+	for _, p in ipairs({ hitbox, seat }) do
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = chassis
+		weld.Part1 = p
+		weld.Parent = p
+	end
+
+	-- Neón bajo el coche
+	if opts.neon and opts.neon ~= "stock" then
+		local color = CarBuilder.hexToColor(tuningOption("neon", opts.neon).value)
+		local glow = newPart({ Name = "NeonGlow", Size = Vector3.new(w * 0.8, 0.1, l * 0.8), CFrame = CFrame.new(0, 0.15, 0), Color = color, Material = Enum.Material.Neon, Transparency = 0.35, CanCollide = false, CanQuery = false, CanTouch = false, Massless = true })
+		local light = Instance.new("PointLight")
+		light.Color = color
+		light.Range = l * 0.9
+		light.Brightness = 3
+		light.Parent = glow
+		glow.Parent = car
+		local weld = Instance.new("WeldConstraint")
+		weld.Part0 = chassis
+		weld.Part1 = glow
+		weld.Parent = glow
+	end
+
+	-- Mantiene el coche derecho (no vuelca), libre para girar.
+	local att = Instance.new("Attachment")
+	att.Name = "Upright"
+	att.CFrame = CFrame.fromMatrix(Vector3.new(), Vector3.new(0, 1, 0), Vector3.new(0, 0, 1))
+	att.Parent = chassis
+	local align = Instance.new("AlignOrientation")
+	align.Name = "Upright"
+	pcall(function()
+		align.Mode = Enum.OrientationAlignmentMode.OneAttachment
+		align.AlignType = Enum.AlignType.PrimaryAxisParallel
+		align.PrimaryAxis = Vector3.new(0, 1, 0)
+	end)
+	align.Attachment0 = att
+	align.Responsiveness = 60
+	align.MaxTorque = 1e8
+	align.Parent = chassis
+
+	for _, p in ipairs(car:GetDescendants()) do
+		if p:IsA("BasePart") then p.Anchored = false end
+	end
+	return car
+end
+
+-- CFrame que coloca un coche (o cualquier objeto) en (x, z) metros mirando según el ángulo a.
+function CarBuilder.faceCF(origin, x, z, a, y)
+	return CFrame.new(origin + Vector3.new(x * S, y or 0, z * S)) * CFrame.Angles(0, a + math.pi, 0)
+end
+
+return CarBuilder
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX00000001"><Properties><string name="Name">Config</string><ProtectedString name="Source"><![CDATA[-- Ajustes del juego. Lo que más te interesa cambiar está arriba.
+local Config = {}
+
+-- Administradores: el creador del juego ya lo es automáticamente.
+-- Para añadir a alguien más, pon su UserId (número que sale en la URL de su perfil de Roblox).
+Config.ADMIN_USER_IDS = {
+	-- 123456789,
+}
+
+-- Sonidos de motor: sube los archivos de roblox/sounds/ a Roblox (Creator Hub > Audio)
+-- y pega aquí el número de cada uno. Con 0 el coche no tiene sonido de motor.
+Config.SOUND_IDS = {
+	i4 = 0,   -- engine_i4.ogg   (Berlina, Compacto)
+	v6 = 0,   -- engine_v6.ogg   (Todoterreno)
+	v8 = 0,   -- engine_v8.ogg   (Pick-up)
+	v6tt = 0, -- engine_v6tt.ogg (Deportivo)
+	i6t = 0,  -- engine_i6t.ogg  (Vector CS)
+	f6 = 0,   -- engine_f6.ogg   (Strada RS)
+	v12 = 0,  -- engine_v12.ogg  (Fulmine HY)
+}
+Config.SOUND_BASE_RPM = 3000 -- revoluciones a las que se grabaron los bucles
+
+-- Escala: cuántos studs mide un metro del juego.
+Config.SCALE = 3
+
+-- Si un coche importado sale mirando hacia atrás, pon 180.
+Config.MODEL_YAW_FIX = 0
+
+-- Monedas
+Config.START_COINS = 0
+Config.CITY_COIN_VALUE = 10
+Config.COIN_RESPAWN_SECONDS = 45
+
+-- Partida guardada (cambiar el nombre empieza todas las partidas de cero)
+Config.DATASTORE_NAME = "ParkingPro3D_v1"
+
+-- Los niveles de cada jugador se construyen lejos de la ciudad, uno al lado de otro.
+Config.LEVEL_ORIGIN = Vector3.new(1600, 0, 0)
+Config.LEVEL_SPACING = 320
+
+-- Colores de pinzas y llantas de serie (como en la web)
+Config.CALIPER_COLORS = {
+	sport = Color3.fromRGB(193, 18, 31), cs = Color3.fromRGB(193, 18, 31),
+	rs = Color3.fromRGB(229, 184, 11), hyper = Color3.fromRGB(229, 184, 11),
+}
+Config.RIM_COLORS = {
+	sedan = Color3.fromRGB(196, 200, 206), hatch = Color3.fromRGB(174, 179, 186),
+	suv = Color3.fromRGB(158, 163, 170), pickup = Color3.fromRGB(43, 45, 49),
+	sport = Color3.fromRGB(141, 147, 155), cs = Color3.fromRGB(138, 109, 59),
+	rs = Color3.fromRGB(201, 204, 209), hyper = Color3.fromRGB(30, 31, 34),
+}
+
+return Config
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX00000002"><Properties><string name="Name">GameData</string><ProtectedString name="Source"><![CDATA[-- ARCHIVO GENERADO por tools/gen-roblox-data.mjs a partir del juego web. No editar a mano.
+-- Unidades en metros y ángulos en radianes (Config.SCALE convierte a studs).
+-- Ángulo a: el coche mira hacia (sin a, 0, cos a).
+return {
+	CARS = {
+		sedan = {
+			name = "Berlina",
+			price = 0,
+			grip = 8.5,
+			hp = 150,
+			zero100 = 9.5,
+			w = 1.84,
+			l = 4.6,
+			h = 1.45,
+			wb = 2.75,
+			wheelR = 0.33,
+			accel = 5.5,
+			brake = 9,
+			maxSpeed = 17,
+			maxReverse = 5,
+			maxSteer = 0.62,
+			steerRate = 2.2,
+			engine = {
+				idle = 850,
+				red = 6200,
+				gears = { 8, 14, 21, 28, 36 },
+				voice = "i4"
+			}
+		},
+		hatch = {
+			name = "Compacto",
+			price = 400,
+			grip = 8.5,
+			hp = 110,
+			zero100 = 10.8,
+			w = 1.78,
+			l = 4.05,
+			h = 1.47,
+			wb = 2.55,
+			wheelR = 0.32,
+			accel = 6,
+			brake = 9.5,
+			maxSpeed = 16,
+			maxReverse = 5,
+			maxSteer = 0.66,
+			steerRate = 2.4,
+			engine = {
+				idle = 850,
+				red = 6500,
+				gears = { 8, 14, 21, 28, 36 },
+				voice = "i4"
+			}
+		},
+		suv = {
+			name = "Todoterreno",
+			price = 1200,
+			grip = 7.5,
+			hp = 190,
+			zero100 = 8.9,
+			w = 1.95,
+			l = 4.7,
+			h = 1.72,
+			wb = 2.85,
+			wheelR = 0.38,
+			accel = 5,
+			brake = 8.5,
+			maxSpeed = 17,
+			maxReverse = 5,
+			maxSteer = 0.58,
+			steerRate = 2,
+			engine = {
+				idle = 850,
+				red = 4800,
+				gears = { 8, 14, 21, 28, 36 },
+				voice = "v6"
+			}
+		},
+		pickup = {
+			name = "Pick-up",
+			price = 1800,
+			grip = 7.5,
+			hp = 210,
+			zero100 = 9.8,
+			w = 2,
+			l = 5.1,
+			h = 1.85,
+			wb = 3.1,
+			wheelR = 0.4,
+			accel = 4.8,
+			brake = 8,
+			maxSpeed = 17,
+			maxReverse = 5,
+			maxSteer = 0.6,
+			steerRate = 2,
+			engine = {
+				idle = 700,
+				red = 5200,
+				gears = { 7, 13, 20, 27, 36 },
+				voice = "v8"
+			}
+		},
+		sport = {
+			name = "Deportivo",
+			price = 3000,
+			grip = 10,
+			hp = 340,
+			zero100 = 5.2,
+			w = 1.92,
+			l = 4.45,
+			h = 1.28,
+			wb = 2.6,
+			wheelR = 0.34,
+			accel = 9.5,
+			brake = 11,
+			maxSpeed = 28,
+			maxReverse = 6,
+			maxSteer = 0.6,
+			steerRate = 2.6,
+			engine = {
+				idle = 900,
+				red = 7000,
+				gears = { 10, 17, 25, 33, 42 },
+				voice = "v6tt"
+			}
+		},
+		cs = {
+			name = "Vector CS",
+			price = 4000,
+			grip = 11,
+			hp = 550,
+			zero100 = 3.4,
+			w = 1.89,
+			l = 4.8,
+			h = 1.39,
+			wb = 2.86,
+			wheelR = 0.34,
+			accel = 10.5,
+			brake = 12,
+			maxSpeed = 34,
+			maxReverse = 6,
+			maxSteer = 0.6,
+			steerRate = 2.8,
+			engine = {
+				idle = 950,
+				red = 7200,
+				gears = { 11, 18, 26, 34, 44 },
+				voice = "i6t"
+			}
+		},
+		rs = {
+			name = "Strada RS",
+			price = 6000,
+			grip = 12,
+			hp = 525,
+			zero100 = 3.2,
+			w = 1.9,
+			l = 4.57,
+			h = 1.32,
+			wb = 2.45,
+			wheelR = 0.35,
+			accel = 11,
+			brake = 13,
+			maxSpeed = 35,
+			maxReverse = 6,
+			maxSteer = 0.62,
+			steerRate = 3,
+			engine = {
+				idle = 1000,
+				red = 9000,
+				gears = { 12, 19, 27, 35, 45 },
+				voice = "f6"
+			}
+		},
+		hyper = {
+			name = "Fulmine HY",
+			price = 10000,
+			grip = 12.5,
+			hp = 963,
+			zero100 = 2.6,
+			w = 1.99,
+			l = 4.7,
+			h = 1.12,
+			wb = 2.65,
+			wheelR = 0.35,
+			accel = 13,
+			brake = 14,
+			maxSpeed = 40,
+			maxReverse = 6,
+			maxSteer = 0.58,
+			steerRate = 3,
+			engine = {
+				idle = 1000,
+				red = 9250,
+				gears = { 13, 21, 30, 39, 50 },
+				voice = "v12"
+			}
+		}
+	},
+	CAR_ORDER = { "sedan", "hatch", "suv", "pickup", "sport", "cs", "rs", "hyper" },
+	COLORS = { "#d62828", "#f77f00", "#fcbf49", "#2a9d8f", "#1d4ed8", "#7c3aed", "#111827", "#f1f5f9", "#64748b", "#ec4899", "#6b8e23", "#0ea5e9" },
+	LEVELS = {
+		{
+			name = "Primeros pasos",
+			par = 15,
+			hint = "Conduce hasta la plaza amarilla y detente dentro.",
+			indoor = false,
+			start = { x = 0, z = 0, a = 0 },
+			bounds = { minX = -15, maxX = 15, minZ = -8, maxZ = 26 },
+			target = { x = 0, z = 16, a = 0, hw = 1.6, hl = 2.8 },
+			obstacles = {
+				{ type = "wall", x = 0, z = -8, a = 1.571, hw = 0.2, hl = 15.2, h = 1.1 },
+				{ type = "wall", x = 15, z = 9, a = 0, hw = 0.2, hl = 17.2, h = 1.1 },
+				{ type = "wall", x = 0, z = 26, a = -1.571, hw = 0.2, hl = 15.2, h = 1.1 },
+				{ type = "wall", x = -15, z = 9, a = 3.142, hw = 0.2, hl = 17.2, h = 1.1 },
+				{ type = "cone", x = -4, z = 8, r = 0.25 },
+				{ type = "cone", x = 4, z = 8, r = 0.25 }
+			},
+			lines = {
+				{ x = -8, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = -4.8, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = -1.6, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = 1.6, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = 4.8, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = 8, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = 0, z = 18.8, a = 1.571, w = 0.12, l = 16 }
+			}
+		},
+		{
+			name = "Entre coches",
+			par = 20,
+			hint = "Aparca entre los coches sin rozarlos.",
+			indoor = false,
+			start = { x = -8, z = 0, a = 0 },
+			bounds = { minX = -16, maxX = 16, minZ = -8, maxZ = 26 },
+			target = { x = 5.8, z = 16, a = 0, hw = 1.45, hl = 2.8 },
+			obstacles = {
+				{ type = "wall", x = 0, z = -8, a = 1.571, hw = 0.2, hl = 16.2, h = 1.1 },
+				{ type = "wall", x = 16, z = 9, a = 0, hw = 0.2, hl = 17.2, h = 1.1 },
+				{ type = "wall", x = 0, z = 26, a = -1.571, hw = 0.2, hl = 16.2, h = 1.1 },
+				{ type = "wall", x = -16, z = 9, a = 3.142, hw = 0.2, hl = 17.2, h = 1.1 },
+				{ type = "car", model = "sedan", color = "#e5e7eb", x = -8.7, z = 16, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "hatch", color = "#92400e", x = -5.8, z = 16, a = 0, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "sedan", color = "#1e3a8a", x = -2.9, z = 16, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#065f46", x = 0, z = 16, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#92400e", x = 2.9, z = 16, a = 0, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "suv", color = "#9ca3af", x = 8.7, z = 16, a = 3.142, hw = 0.975, hl = 2.35 },
+				{ type = "cone", x = 12, z = 6, r = 0.25 },
+				{ type = "cone", x = -12, z = 6, r = 0.25 }
+			},
+			lines = {
+				{ x = -10.15, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = -7.25, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = -4.35, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = -1.45, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = 1.45, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = 4.35, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = 7.25, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = 10.15, z = 16, a = 0, w = 0.12, l = 5.6 },
+				{ x = 0, z = 18.8, a = 1.571, w = 0.12, l = 20.3 }
+			}
+		},
+		{
+			name = "Pasillo estrecho",
+			par = 30,
+			hint = "Gira en el pasillo y entra en la plaza. Usa la marcha atrás (R) si hace falta.",
+			indoor = false,
+			start = { x = -16.5, z = 0, a = 1.571 },
+			bounds = { minX = -20, maxX = 20, minZ = -10, maxZ = 10 },
+			target = { x = -2.9, z = -6.2, a = 0, hw = 1.45, hl = 2.8 },
+			obstacles = {
+				{ type = "wall", x = 0, z = -10, a = 1.571, hw = 0.2, hl = 20.2, h = 1.1 },
+				{ type = "wall", x = 20, z = 0, a = 0, hw = 0.2, hl = 10.2, h = 1.1 },
+				{ type = "wall", x = 0, z = 10, a = -1.571, hw = 0.2, hl = 20.2, h = 1.1 },
+				{ type = "wall", x = -20, z = 0, a = 3.142, hw = 0.2, hl = 10.2, h = 1.1 },
+				{ type = "car", model = "suv", color = "#b91c1c", x = -14.5, z = -6.2, a = 0, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "hatch", color = "#065f46", x = -11.6, z = -6.2, a = 0, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "hatch", color = "#475569", x = -8.7, z = -6.2, a = 0, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "sedan", color = "#92400e", x = -5.8, z = -6.2, a = 0, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#e5e7eb", x = 0, z = -6.2, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "suv", color = "#065f46", x = 2.9, z = -6.2, a = 3.142, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "sedan", color = "#92400e", x = 5.8, z = -6.2, a = 0, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#92400e", x = 8.7, z = -6.2, a = 0, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#065f46", x = 11.6, z = -6.2, a = 0, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "hatch", color = "#e5e7eb", x = 14.5, z = -6.2, a = 3.142, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "sedan", color = "#7f1d1d", x = 14.5, z = 6.2, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "suv", color = "#475569", x = 11.6, z = 6.2, a = 3.142, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "sedan", color = "#111827", x = 8.7, z = 6.2, a = 6.283, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "hatch", color = "#e5e7eb", x = 2.9, z = 6.2, a = 3.142, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "suv", color = "#475569", x = 0, z = 6.2, a = 3.142, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "sedan", color = "#7f1d1d", x = -2.9, z = 6.2, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "suv", color = "#7f1d1d", x = -5.8, z = 6.2, a = 3.142, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "sedan", color = "#b91c1c", x = -8.7, z = 6.2, a = 6.283, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "suv", color = "#f59e0b", x = -11.6, z = 6.2, a = 3.142, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "sedan", color = "#7f1d1d", x = -14.5, z = 6.2, a = 3.142, hw = 0.92, hl = 2.3 }
+			},
+			lines = {
+				{ x = -15.95, z = -6.2, a = 0, w = 0.12, l = 5.6 },
+				{ x = -13.05, z = -6.2, a = 0, w = 0.12, l = 5.6 },
+				{ x = -10.15, z = -6.2, a = 0, w = 0.12, l = 5.6 },
+				{ x = -7.25, z = -6.2, a = 0, w = 0.12, l = 5.6 },
+				{ x = -4.35, z = -6.2, a = 0, w = 0.12, l = 5.6 },
+				{ x = -1.45, z = -6.2, a = 0, w = 0.12, l = 5.6 },
+				{ x = 1.45, z = -6.2, a = 0, w = 0.12, l = 5.6 },
+				{ x = 4.35, z = -6.2, a = 0, w = 0.12, l = 5.6 },
+				{ x = 7.25, z = -6.2, a = 0, w = 0.12, l = 5.6 },
+				{ x = 10.15, z = -6.2, a = 0, w = 0.12, l = 5.6 },
+				{ x = 13.05, z = -6.2, a = 0, w = 0.12, l = 5.6 },
+				{ x = 15.95, z = -6.2, a = 0, w = 0.12, l = 5.6 },
+				{ x = 0, z = -9, a = 1.571, w = 0.12, l = 31.9 },
+				{ x = 15.95, z = 6.2, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = 13.05, z = 6.2, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = 10.15, z = 6.2, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = 7.25, z = 6.2, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = 4.35, z = 6.2, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = 1.45, z = 6.2, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = -1.45, z = 6.2, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = -4.35, z = 6.2, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = -7.25, z = 6.2, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = -10.15, z = 6.2, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = -13.05, z = 6.2, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = -15.95, z = 6.2, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = 0, z = 9, a = -1.571, w = 0.12, l = 31.9 }
+			}
+		},
+		{
+			name = "Aparcamiento en línea",
+			par = 35,
+			hint = "Aparca en paralelo junto al bordillo.",
+			indoor = false,
+			start = { x = -20, z = 3, a = 1.571 },
+			bounds = { minX = -26, maxX = 26, minZ = -4, maxZ = 10 },
+			target = { x = 1.5, z = -1.55, a = 1.571, hw = 1.3, hl = 3.25 },
+			obstacles = {
+				{ type = "wall", x = 0, z = -4, a = 1.571, hw = 0.2, hl = 26.2, h = 1.1 },
+				{ type = "wall", x = 26, z = 3, a = 0, hw = 0.2, hl = 7.2, h = 1.1 },
+				{ type = "wall", x = 0, z = 10, a = -1.571, hw = 0.2, hl = 26.2, h = 1.1 },
+				{ type = "wall", x = -26, z = 3, a = 3.142, hw = 0.2, hl = 7.2, h = 1.1 },
+				{ type = "wall", x = 0, z = -3.1, a = 1.571, hw = 0.2, hl = 26.2, h = 0.25 },
+				{ type = "car", model = "sedan", color = "#b91c1c", x = -18, z = -1.55, a = -1.571, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "suv", color = "#9ca3af", x = -11.5, z = -1.55, a = -1.571, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "hatch", color = "#92400e", x = -5, z = -1.55, a = -1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "hatch", color = "#b91c1c", x = 8, z = -1.55, a = -1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "sedan", color = "#475569", x = 14.5, z = -1.55, a = -1.571, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "hatch", color = "#92400e", x = 21, z = -1.55, a = 1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "suv", color = "#065f46", x = -20, z = 7.5, a = 1.571, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "hatch", color = "#111827", x = -13, z = 7.5, a = 1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "sedan", color = "#b91c1c", x = 1, z = 7.5, a = 1.571, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "hatch", color = "#7f1d1d", x = 8, z = 7.5, a = 1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "hatch", color = "#7f1d1d", x = 22, z = 7.5, a = 1.571, hw = 0.89, hl = 2.025 }
+			},
+			lines = {
+				{ x = -21.25, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = -14.75, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = -8.25, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = -1.75, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = 4.75, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = 11.25, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = 17.75, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = 22.75, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = 2.75, z = -0.25, a = 1.571, w = 0.12, l = 45.5 }
+			}
+		},
+		{
+			name = "El garaje",
+			par = 30,
+			hint = "Mete el coche en el garaje del centro.",
+			indoor = false,
+			start = { x = -10, z = 0, a = 1.571 },
+			bounds = { minX = -18, maxX = 18, minZ = -8, maxZ = 22 },
+			target = { x = 0, z = 14.2, a = 0, hw = 1.6, hl = 3 },
+			obstacles = {
+				{ type = "wall", x = 0, z = -8, a = 1.571, hw = 0.2, hl = 18.2, h = 1.1 },
+				{ type = "wall", x = 18, z = 7, a = 0, hw = 0.2, hl = 15.2, h = 1.1 },
+				{ type = "wall", x = 0, z = 22, a = -1.571, hw = 0.2, hl = 18.2, h = 1.1 },
+				{ type = "wall", x = -18, z = 7, a = 3.142, hw = 0.2, hl = 15.2, h = 1.1 },
+				{ type = "wall", x = -5.4, z = 14.2, a = 0, hw = 0.15, hl = 3.35, h = 2.4 },
+				{ type = "wall", x = -1.8, z = 14.2, a = 0, hw = 0.15, hl = 3.35, h = 2.4 },
+				{ type = "wall", x = 1.8, z = 14.2, a = 0, hw = 0.15, hl = 3.35, h = 2.4 },
+				{ type = "wall", x = 5.4, z = 14.2, a = 0, hw = 0.15, hl = 3.35, h = 2.4 },
+				{ type = "wall", x = 0, z = 17.4, a = 1.571, hw = 0.15, hl = 5.55, h = 2.4 },
+				{ type = "car", model = "hatch", color = "#475569", x = -3.6, z = 14.2, a = 0, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "suv", color = "#f59e0b", x = 3.6, z = 14.2, a = 3.142, hw = 0.975, hl = 2.35 },
+				{ type = "cone", x = -7, z = 7, r = 0.25 },
+				{ type = "cone", x = 7, z = 7, r = 0.25 }
+			},
+			lines = {
+				{ x = 0, z = 11, a = 1.571, w = 0.15, l = 10.8 }
+			}
+		},
+		{
+			name = "Slalom",
+			par = 35,
+			hint = "Esquiva los conos y aparca al final.",
+			indoor = false,
+			start = { x = 0, z = 0, a = 0 },
+			bounds = { minX = -8, maxX = 8, minZ = -4, maxZ = 50 },
+			target = { x = 3, z = 42, a = 0, hw = 1.5, hl = 2.8 },
+			obstacles = {
+				{ type = "wall", x = 0, z = -4, a = 1.571, hw = 0.2, hl = 8.2, h = 1.1 },
+				{ type = "wall", x = 8, z = 23, a = 0, hw = 0.2, hl = 27.2, h = 1.1 },
+				{ type = "wall", x = 0, z = 50, a = -1.571, hw = 0.2, hl = 8.2, h = 1.1 },
+				{ type = "wall", x = -8, z = 23, a = 3.142, hw = 0.2, hl = 27.2, h = 1.1 },
+				{ type = "cone", x = -5.5, z = 3, r = 0.25 },
+				{ type = "cone", x = 5.5, z = 3, r = 0.25 },
+				{ type = "cone", x = -5.5, z = 6, r = 0.25 },
+				{ type = "cone", x = 5.5, z = 6, r = 0.25 },
+				{ type = "cone", x = -5.5, z = 9, r = 0.25 },
+				{ type = "cone", x = 5.5, z = 9, r = 0.25 },
+				{ type = "cone", x = -5.5, z = 12, r = 0.25 },
+				{ type = "cone", x = 5.5, z = 12, r = 0.25 },
+				{ type = "cone", x = -5.5, z = 15, r = 0.25 },
+				{ type = "cone", x = 5.5, z = 15, r = 0.25 },
+				{ type = "cone", x = -5.5, z = 18, r = 0.25 },
+				{ type = "cone", x = 5.5, z = 18, r = 0.25 },
+				{ type = "cone", x = -5.5, z = 21, r = 0.25 },
+				{ type = "cone", x = 5.5, z = 21, r = 0.25 },
+				{ type = "cone", x = -5.5, z = 24, r = 0.25 },
+				{ type = "cone", x = 5.5, z = 24, r = 0.25 },
+				{ type = "cone", x = -5.5, z = 27, r = 0.25 },
+				{ type = "cone", x = 5.5, z = 27, r = 0.25 },
+				{ type = "cone", x = -5.5, z = 30, r = 0.25 },
+				{ type = "cone", x = 5.5, z = 30, r = 0.25 },
+				{ type = "cone", x = -5.5, z = 33, r = 0.25 },
+				{ type = "cone", x = 5.5, z = 33, r = 0.25 },
+				{ type = "cone", x = -5.5, z = 36, r = 0.25 },
+				{ type = "cone", x = 5.5, z = 36, r = 0.25 },
+				{ type = "cone", x = -4.7, z = 10, r = 0.25 },
+				{ type = "cone", x = -3.9, z = 10, r = 0.25 },
+				{ type = "cone", x = -3.1, z = 10, r = 0.25 },
+				{ type = "cone", x = -2.3, z = 10, r = 0.25 },
+				{ type = "cone", x = -1.5, z = 10, r = 0.25 },
+				{ type = "cone", x = -0.7, z = 10, r = 0.25 },
+				{ type = "cone", x = 0.1, z = 10, r = 0.25 },
+				{ type = "cone", x = 0.9, z = 10, r = 0.25 },
+				{ type = "cone", x = -1, z = 19, r = 0.25 },
+				{ type = "cone", x = -0.2, z = 19, r = 0.25 },
+				{ type = "cone", x = 0.6, z = 19, r = 0.25 },
+				{ type = "cone", x = 1.4, z = 19, r = 0.25 },
+				{ type = "cone", x = 2.2, z = 19, r = 0.25 },
+				{ type = "cone", x = 3, z = 19, r = 0.25 },
+				{ type = "cone", x = 3.8, z = 19, r = 0.25 },
+				{ type = "cone", x = 4.6, z = 19, r = 0.25 },
+				{ type = "cone", x = -4.7, z = 28, r = 0.25 },
+				{ type = "cone", x = -3.9, z = 28, r = 0.25 },
+				{ type = "cone", x = -3.1, z = 28, r = 0.25 },
+				{ type = "cone", x = -2.3, z = 28, r = 0.25 },
+				{ type = "cone", x = -1.5, z = 28, r = 0.25 },
+				{ type = "cone", x = -0.7, z = 28, r = 0.25 },
+				{ type = "cone", x = 0.1, z = 28, r = 0.25 },
+				{ type = "cone", x = 0.9, z = 28, r = 0.25 },
+				{ type = "car", model = "sedan", color = "#f59e0b", x = -3, z = 42, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#b91c1c", x = 0, z = 42, a = 0, hw = 0.92, hl = 2.3 }
+			},
+			lines = {
+				{ x = -4.5, z = 42, a = 0, w = 0.12, l = 5.6 },
+				{ x = -1.5, z = 42, a = 0, w = 0.12, l = 5.6 },
+				{ x = 1.5, z = 42, a = 0, w = 0.12, l = 5.6 },
+				{ x = 4.5, z = 42, a = 0, w = 0.12, l = 5.6 },
+				{ x = 0, z = 44.8, a = 1.571, w = 0.12, l = 9 }
+			}
+		},
+		{
+			name = "En diagonal",
+			par = 25,
+			hint = "Aparca en batería inclinada.",
+			indoor = false,
+			start = { x = -18, z = 2, a = 1.571 },
+			bounds = { minX = -22, maxX = 22, minZ = -6, maxZ = 18 },
+			target = { x = 3.839, z = 10, a = 0.785, hw = 1.4, hl = 2.8 },
+			obstacles = {
+				{ type = "wall", x = 0, z = -6, a = 1.571, hw = 0.2, hl = 22.2, h = 1.1 },
+				{ type = "wall", x = 22, z = 6, a = 0, hw = 0.2, hl = 12.2, h = 1.1 },
+				{ type = "wall", x = 0, z = 18, a = -1.571, hw = 0.2, hl = 22.2, h = 1.1 },
+				{ type = "wall", x = -22, z = 6, a = 3.142, hw = 0.2, hl = 12.2, h = 1.1 },
+				{ type = "car", model = "sedan", color = "#92400e", x = -12, z = 10, a = 0.785, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#475569", x = -8.04, z = 10, a = 0.785, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#b91c1c", x = -4.08, z = 10, a = 0.785, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#065f46", x = -0.121, z = 10, a = 0.785, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "suv", color = "#9ca3af", x = 7.799, z = 10, a = 0.785, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "sedan", color = "#b91c1c", x = 11.759, z = 10, a = 0.785, hw = 0.92, hl = 2.3 },
+				{ type = "cone", x = 14, z = 2, r = 0.25 },
+				{ type = "cone", x = 10, z = -2, r = 0.25 },
+				{ type = "cone", x = 18, z = -3, r = 0.25 }
+			},
+			lines = {
+				{ x = -13.98, z = 10, a = 0.785, w = 0.12, l = 5.6 },
+				{ x = -10.02, z = 10, a = 0.785, w = 0.12, l = 5.6 },
+				{ x = -6.06, z = 10, a = 0.785, w = 0.12, l = 5.6 },
+				{ x = -2.101, z = 10, a = 0.785, w = 0.12, l = 5.6 },
+				{ x = 1.859, z = 10, a = 0.785, w = 0.12, l = 5.6 },
+				{ x = 5.819, z = 10, a = 0.785, w = 0.12, l = 5.6 },
+				{ x = 9.779, z = 10, a = 0.785, w = 0.12, l = 5.6 },
+				{ x = 13.739, z = 10, a = 0.785, w = 0.12, l = 5.6 }
+			}
+		},
+		{
+			name = "Parking subterráneo",
+			par = 35,
+			hint = "Cuidado con las columnas.",
+			indoor = true,
+			start = { x = -15, z = 0, a = 1.571 },
+			bounds = { minX = -19, maxX = 19, minZ = -9.4, maxZ = 9.4 },
+			target = { x = -4.35, z = 5.9, a = 3.142, hw = 1.45, hl = 2.8 },
+			obstacles = {
+				{ type = "wall", x = 0, z = -9.4, a = 1.571, hw = 0.2, hl = 19.2, h = 1.1 },
+				{ type = "wall", x = 19, z = 0, a = 0, hw = 0.2, hl = 9.6, h = 1.1 },
+				{ type = "wall", x = 0, z = 9.4, a = -1.571, hw = 0.2, hl = 19.2, h = 1.1 },
+				{ type = "wall", x = -19, z = 0, a = 3.142, hw = 0.2, hl = 9.6, h = 1.1 },
+				{ type = "car", model = "hatch", color = "#111827", x = -13.05, z = -5.9, a = 0, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "suv", color = "#111827", x = -10.15, z = -5.9, a = 3.142, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "sedan", color = "#7f1d1d", x = -4.35, z = -5.9, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#92400e", x = -1.45, z = -5.9, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#e5e7eb", x = 1.45, z = -5.9, a = 0, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#e5e7eb", x = 4.35, z = -5.9, a = 0, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#92400e", x = 7.25, z = -5.9, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "suv", color = "#9ca3af", x = 10.15, z = -5.9, a = 0, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "hatch", color = "#475569", x = 13.05, z = -5.9, a = 3.142, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "hatch", color = "#e5e7eb", x = 13.05, z = 5.9, a = 6.283, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "sedan", color = "#111827", x = 10.15, z = 5.9, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "suv", color = "#475569", x = 7.25, z = 5.9, a = 6.283, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "sedan", color = "#111827", x = 4.35, z = 5.9, a = 6.283, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "hatch", color = "#7f1d1d", x = 1.45, z = 5.9, a = 6.283, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "sedan", color = "#475569", x = -1.45, z = 5.9, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#f59e0b", x = -7.25, z = 5.9, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#1e3a8a", x = -10.15, z = 5.9, a = 6.283, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#92400e", x = -13.05, z = 5.9, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "pillar", x = -14.5, z = -3.3, r = 0.35 },
+				{ type = "pillar", x = -5.8, z = -3.3, r = 0.35 },
+				{ type = "pillar", x = 2.9, z = -3.3, r = 0.35 },
+				{ type = "pillar", x = 11.6, z = -3.3, r = 0.35 },
+				{ type = "pillar", x = 11.6, z = 3.3, r = 0.35 },
+				{ type = "pillar", x = 2.9, z = 3.3, r = 0.35 },
+				{ type = "pillar", x = -8.7, z = 3.3, r = 0.35 }
+			},
+			lines = {
+				{ x = -14.5, z = -5.9, a = 0, w = 0.12, l = 5.6 },
+				{ x = -11.6, z = -5.9, a = 0, w = 0.12, l = 5.6 },
+				{ x = -8.7, z = -5.9, a = 0, w = 0.12, l = 5.6 },
+				{ x = -5.8, z = -5.9, a = 0, w = 0.12, l = 5.6 },
+				{ x = -2.9, z = -5.9, a = 0, w = 0.12, l = 5.6 },
+				{ x = 0, z = -5.9, a = 0, w = 0.12, l = 5.6 },
+				{ x = 2.9, z = -5.9, a = 0, w = 0.12, l = 5.6 },
+				{ x = 5.8, z = -5.9, a = 0, w = 0.12, l = 5.6 },
+				{ x = 8.7, z = -5.9, a = 0, w = 0.12, l = 5.6 },
+				{ x = 11.6, z = -5.9, a = 0, w = 0.12, l = 5.6 },
+				{ x = 14.5, z = -5.9, a = 0, w = 0.12, l = 5.6 },
+				{ x = 0, z = -8.7, a = 1.571, w = 0.12, l = 29 },
+				{ x = 14.5, z = 5.9, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = 11.6, z = 5.9, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = 8.7, z = 5.9, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = 5.8, z = 5.9, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = 2.9, z = 5.9, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = 0, z = 5.9, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = -2.9, z = 5.9, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = -5.8, z = 5.9, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = -8.7, z = 5.9, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = -11.6, z = 5.9, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = -14.5, z = 5.9, a = 3.142, w = 0.12, l = 5.6 },
+				{ x = 0, z = 8.7, a = -1.571, w = 0.12, l = 29 }
+			}
+		},
+		{
+			name = "Línea experto",
+			par = 40,
+			hint = "Paralelo con muy poco espacio.",
+			indoor = false,
+			start = { x = -22, z = 2.6, a = 1.571 },
+			bounds = { minX = -28, maxX = 28, minZ = -4, maxZ = 8.2 },
+			target = { x = 3, z = -1.55, a = 1.571, hw = 1.3, hl = 3 },
+			obstacles = {
+				{ type = "wall", x = 0, z = -4, a = 1.571, hw = 0.2, hl = 28.2, h = 1.1 },
+				{ type = "wall", x = 28, z = 2.1, a = 0, hw = 0.2, hl = 6.3, h = 1.1 },
+				{ type = "wall", x = 0, z = 8.2, a = -1.571, hw = 0.2, hl = 28.2, h = 1.1 },
+				{ type = "wall", x = -28, z = 2.1, a = 3.142, hw = 0.2, hl = 6.3, h = 1.1 },
+				{ type = "wall", x = 0, z = -3.1, a = 1.571, hw = 0.2, hl = 28.2, h = 0.25 },
+				{ type = "car", model = "hatch", color = "#475569", x = -21, z = -1.55, a = 1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "suv", color = "#92400e", x = -15, z = -1.55, a = 1.571, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "sedan", color = "#475569", x = -9, z = -1.55, a = 1.571, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#1e3a8a", x = -3, z = -1.55, a = 1.571, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "hatch", color = "#92400e", x = 9, z = -1.55, a = 1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "hatch", color = "#b91c1c", x = 15, z = -1.55, a = 1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "hatch", color = "#f59e0b", x = 21, z = -1.55, a = 1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "hatch", color = "#1e3a8a", x = -24, z = 5.6, a = -1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "hatch", color = "#f59e0b", x = -18.5, z = 5.6, a = -1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "hatch", color = "#e5e7eb", x = -13, z = 5.6, a = -1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "suv", color = "#f59e0b", x = -2, z = 5.6, a = -1.571, hw = 0.975, hl = 2.35 },
+				{ type = "car", model = "hatch", color = "#f59e0b", x = 3.5, z = 5.6, a = -1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "sedan", color = "#065f46", x = 9, z = 5.6, a = -1.571, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "hatch", color = "#7f1d1d", x = 20, z = 5.6, a = -1.571, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "sedan", color = "#9ca3af", x = 25.5, z = 5.6, a = -1.571, hw = 0.92, hl = 2.3 }
+			},
+			lines = {
+				{ x = -24, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = -18, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = -12, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = -6, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = 0, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = 6, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = 12, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = 18, z = -1.55, a = 0, w = 0.12, l = 2.6 },
+				{ x = 27, z = -1.55, a = 0, w = 0.12, l = 2.6 }
+			}
+		},
+		{
+			name = "Laberinto final",
+			par = 50,
+			hint = "Atraviesa el recinto y encuentra tu plaza.",
+			indoor = false,
+			start = { x = -15, z = 0, a = 1.571 },
+			bounds = { minX = -20, maxX = 20, minZ = -5, maxZ = 46 },
+			target = { x = 3, z = 38, a = 0, hw = 1.5, hl = 2.8 },
+			obstacles = {
+				{ type = "wall", x = 0, z = -5, a = 1.571, hw = 0.2, hl = 20.2, h = 1.1 },
+				{ type = "wall", x = 20, z = 20.5, a = 0, hw = 0.2, hl = 25.7, h = 1.1 },
+				{ type = "wall", x = 0, z = 46, a = -1.571, hw = 0.2, hl = 20.2, h = 1.1 },
+				{ type = "wall", x = -20, z = 20.5, a = 3.142, hw = 0.2, hl = 25.7, h = 1.1 },
+				{ type = "wall", x = -6, z = 12, a = 1.571, hw = 0.2, hl = 14.2, h = 1.2 },
+				{ type = "wall", x = 6, z = 26, a = 1.571, hw = 0.2, hl = 14.2, h = 1.2 },
+				{ type = "cone", x = 2, z = -2.5, r = 0.25 },
+				{ type = "cone", x = 2, z = 2.5, r = 0.25 },
+				{ type = "pillar", x = -2, z = 19, r = 0.6 },
+				{ type = "pillar", x = 10, z = 17, r = 0.6 },
+				{ type = "pillar", x = -12, z = 20, r = 0.6 },
+				{ type = "car", model = "sedan", color = "#111827", x = -6, z = 38, a = 0, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "sedan", color = "#7f1d1d", x = -3, z = 38, a = 3.142, hw = 0.92, hl = 2.3 },
+				{ type = "car", model = "hatch", color = "#9ca3af", x = 0, z = 38, a = 0, hw = 0.89, hl = 2.025 },
+				{ type = "car", model = "suv", color = "#475569", x = 6, z = 38, a = 0, hw = 0.975, hl = 2.35 },
+				{ type = "cone", x = -14, z = 34, r = 0.25 },
+				{ type = "cone", x = -10, z = 42, r = 0.25 },
+				{ type = "cone", x = 14, z = 32, r = 0.25 }
+			},
+			lines = {
+				{ x = -7.5, z = 38, a = 0, w = 0.12, l = 5.6 },
+				{ x = -4.5, z = 38, a = 0, w = 0.12, l = 5.6 },
+				{ x = -1.5, z = 38, a = 0, w = 0.12, l = 5.6 },
+				{ x = 1.5, z = 38, a = 0, w = 0.12, l = 5.6 },
+				{ x = 4.5, z = 38, a = 0, w = 0.12, l = 5.6 },
+				{ x = 7.5, z = 38, a = 0, w = 0.12, l = 5.6 },
+				{ x = 0, z = 40.8, a = 1.571, w = 0.12, l = 15 }
+			}
+		}
+	},
+	CITY = {
+		name = "Ciudad",
+		par = 0,
+		hint = "Explora la ciudad y recoge monedas.",
+		indoor = false,
+		start = { x = 0, z = 0, a = 0 },
+		bounds = { minX = -130, maxX = 130, minZ = -130, maxZ = 130 },
+		target = nil,
+		obstacles = {
+			{ type = "wall", x = 0, z = -130, a = 1.571, hw = 0.2, hl = 130.2, h = 2 },
+			{ type = "wall", x = 130, z = 0, a = 0, hw = 0.2, hl = 130.2, h = 2 },
+			{ type = "wall", x = 0, z = 130, a = -1.571, hw = 0.2, hl = 130.2, h = 2 },
+			{ type = "wall", x = -130, z = 0, a = 3.142, hw = 0.2, hl = 130.2, h = 2 },
+			{ type = "building", x = -100, z = -100, a = 0, hw = 11.843, hl = 11.602, h = 29.93, color = "#c7b8a1" },
+			{ type = "building", x = -100, z = -60, a = 0, hw = 10.441, hl = 9.635, h = 22.726, color = "#a7b6c2" },
+			{ type = "building", x = -100, z = -20, a = 0, hw = 12.188, hl = 10.914, h = 10.761, color = "#d9c2a7" },
+			{ type = "building", x = -100, z = 20, a = 0, hw = 12.707, hl = 9.642, h = 8.138, color = "#c7b8a1" },
+			{ type = "building", x = -100, z = 60, a = 0, hw = 12.629, hl = 10.135, h = 36.708, color = "#e2d6c3" },
+			{ type = "building", x = -106.5, z = 100, a = 0, hw = 5.38, hl = 11.084, h = 17.007, color = "#a7b6c2" },
+			{ type = "building", x = -93.5, z = 100, a = 0, hw = 5.086, hl = 11.593, h = 23.96, color = "#a7b6c2" },
+			{ type = "building", x = -66.5, z = -100, a = 0, hw = 5.145, hl = 10.111, h = 17.07, color = "#a7b6c2" },
+			{ type = "building", x = -53.5, z = -100, a = 0, hw = 5.552, hl = 10.72, h = 25.038, color = "#c9d6df" },
+			{ type = "building", x = -60, z = -60, a = 0, hw = 10.839, hl = 12.273, h = 19.776, color = "#d9c2a7" },
+			{ type = "building", x = -60, z = -20, a = 0, hw = 9.464, hl = 12.216, h = 11.721, color = "#c9d6df" },
+			{ type = "building", x = -60, z = 20, a = 0, hw = 12.561, hl = 12.848, h = 37.356, color = "#d9c2a7" },
+			{ type = "car", model = "suv", color = "#111827", x = -68.4, z = 53, a = 3.142, hw = 0.975, hl = 2.35 },
+			{ type = "car", model = "suv", color = "#111827", x = -65.6, z = 53, a = 3.142, hw = 0.975, hl = 2.35 },
+			{ type = "car", model = "sedan", color = "#e5e7eb", x = -60, z = 53, a = 0, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "sedan", color = "#065f46", x = -57.2, z = 53, a = 0, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "sedan", color = "#1e3a8a", x = -48.8, z = 53, a = 3.142, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "suv", color = "#111827", x = -51.6, z = 67, a = 3.142, hw = 0.975, hl = 2.35 },
+			{ type = "car", model = "hatch", color = "#f59e0b", x = -54.4, z = 67, a = 3.142, hw = 0.89, hl = 2.025 },
+			{ type = "car", model = "hatch", color = "#475569", x = -62.8, z = 67, a = 6.283, hw = 0.89, hl = 2.025 },
+			{ type = "car", model = "sedan", color = "#f59e0b", x = -65.6, z = 67, a = 6.283, hw = 0.92, hl = 2.3 },
+			{ type = "building", x = -60, z = 100, a = 0, hw = 10.44, hl = 11.34, h = 8.544, color = "#b7c4cf" },
+			{ type = "building", x = -20, z = -100, a = 0, hw = 11.091, hl = 11.322, h = 13.929, color = "#e6e1d6" },
+			{ type = "car", model = "suv", color = "#e5e7eb", x = -31.2, z = -67, a = 0, hw = 0.975, hl = 2.35 },
+			{ type = "car", model = "sedan", color = "#92400e", x = -28.4, z = -67, a = 0, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "hatch", color = "#e5e7eb", x = -20, z = -67, a = 3.142, hw = 0.89, hl = 2.025 },
+			{ type = "car", model = "suv", color = "#111827", x = -14.4, z = -67, a = 3.142, hw = 0.975, hl = 2.35 },
+			{ type = "car", model = "sedan", color = "#f59e0b", x = -11.6, z = -67, a = 3.142, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "sedan", color = "#e5e7eb", x = -8.8, z = -53, a = 6.283, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "hatch", color = "#9ca3af", x = -11.6, z = -53, a = 3.142, hw = 0.89, hl = 2.025 },
+			{ type = "car", model = "sedan", color = "#9ca3af", x = -14.4, z = -53, a = 3.142, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "sedan", color = "#9ca3af", x = -17.2, z = -53, a = 6.283, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "sedan", color = "#065f46", x = -20, z = -53, a = 6.283, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "sedan", color = "#92400e", x = -25.6, z = -53, a = 6.283, hw = 0.92, hl = 2.3 },
+			{ type = "building", x = -20, z = -20, a = 0, hw = 12.88, hl = 9.098, h = 12.08, color = "#d9c2a7" },
+			{ type = "building", x = -20, z = 20, a = 0, hw = 11.606, hl = 10.684, h = 25.519, color = "#cdb4a0" },
+			{ type = "building", x = -20, z = 60, a = 0, hw = 10.203, hl = 12.775, h = 39.61, color = "#d9c2a7" },
+			{ type = "building", x = -20, z = 100, a = 0, hw = 9.116, hl = 9.159, h = 11.355, color = "#c9d6df" },
+			{ type = "building", x = 20, z = -100, a = 0, hw = 11.776, hl = 12.987, h = 39.059, color = "#e2d6c3" },
+			{ type = "building", x = 13.5, z = -60, a = 0, hw = 5.719, hl = 11.623, h = 31.367, color = "#b7c4cf" },
+			{ type = "building", x = 26.5, z = -60, a = 0, hw = 5.165, hl = 11.803, h = 26.768, color = "#d9c2a7" },
+			{ type = "building", x = 20, z = -20, a = 0, hw = 11.381, hl = 11.15, h = 19.25, color = "#c7b8a1" },
+			{ type = "car", model = "hatch", color = "#111827", x = 8.8, z = 13, a = 0, hw = 0.89, hl = 2.025 },
+			{ type = "car", model = "suv", color = "#b91c1c", x = 11.6, z = 13, a = 3.142, hw = 0.975, hl = 2.35 },
+			{ type = "car", model = "sedan", color = "#7f1d1d", x = 14.4, z = 13, a = 0, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "suv", color = "#475569", x = 22.8, z = 13, a = 3.142, hw = 0.975, hl = 2.35 },
+			{ type = "car", model = "sedan", color = "#f59e0b", x = 31.2, z = 13, a = 0, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "suv", color = "#e5e7eb", x = 31.2, z = 27, a = 6.283, hw = 0.975, hl = 2.35 },
+			{ type = "car", model = "sedan", color = "#7f1d1d", x = 25.6, z = 27, a = 3.142, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "hatch", color = "#1e3a8a", x = 22.8, z = 27, a = 3.142, hw = 0.89, hl = 2.025 },
+			{ type = "building", x = 13.5, z = 60, a = 0, hw = 5.271, hl = 11.546, h = 25.536, color = "#a7b6c2" },
+			{ type = "building", x = 26.5, z = 60, a = 0, hw = 5.895, hl = 10.119, h = 26.621, color = "#d9c2a7" },
+			{ type = "building", x = 20, z = 100, a = 0, hw = 11.764, hl = 11.664, h = 12.107, color = "#a7b6c2" },
+			{ type = "building", x = 60, z = -100, a = 0, hw = 12.767, hl = 12.648, h = 26.158, color = "#d9c2a7" },
+			{ type = "building", x = 60, z = -60, a = 0, hw = 11.076, hl = 9.548, h = 25.769, color = "#c7b8a1" },
+			{ type = "car", model = "sedan", color = "#9ca3af", x = 51.6, z = -27, a = 0, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "suv", color = "#475569", x = 54.4, z = -27, a = 3.142, hw = 0.975, hl = 2.35 },
+			{ type = "car", model = "suv", color = "#475569", x = 60, z = -27, a = 0, hw = 0.975, hl = 2.35 },
+			{ type = "car", model = "sedan", color = "#f59e0b", x = 65.6, z = -27, a = 0, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "hatch", color = "#f59e0b", x = 68.4, z = -27, a = 0, hw = 0.89, hl = 2.025 },
+			{ type = "car", model = "hatch", color = "#475569", x = 71.2, z = -27, a = 0, hw = 0.89, hl = 2.025 },
+			{ type = "car", model = "hatch", color = "#92400e", x = 68.4, z = -13, a = 6.283, hw = 0.89, hl = 2.025 },
+			{ type = "car", model = "sedan", color = "#b91c1c", x = 57.2, z = -13, a = 3.142, hw = 0.92, hl = 2.3 },
+			{ type = "car", model = "hatch", color = "#f59e0b", x = 54.4, z = -13, a = 3.142, hw = 0.89, hl = 2.025 },
+			{ type = "building", x = 60, z = 20, a = 0, hw = 10.769, hl = 10.214, h = 34.992, color = "#c9d6df" },
+			{ type = "building", x = 60, z = 60, a = 0, hw = 10.264, hl = 12.782, h = 8.401, color = "#b7c4cf" },
+			{ type = "building", x = 53.5, z = 100, a = 0, hw = 5.527, hl = 10.701, h = 15.517, color = "#d9c2a7" },
+			{ type = "building", x = 66.5, z = 100, a = 0, hw = 5.09, hl = 9.963, h = 12.545, color = "#c7b8a1" },
+			{ type = "building", x = 93.5, z = -100, a = 0, hw = 5.763, hl = 12.212, h = 31.617, color = "#b7c4cf" },
+			{ type = "building", x = 106.5, z = -100, a = 0, hw = 5.64, hl = 11.713, h = 15.156, color = "#c9d6df" },
+			{ type = "building", x = 93.5, z = -60, a = 0, hw = 5.347, hl = 9.155, h = 25.927, color = "#c9d6df" },
+			{ type = "building", x = 106.5, z = -60, a = 0, hw = 5.611, hl = 11.27, h = 22.301, color = "#d9c2a7" },
+			{ type = "building", x = 100, z = -20, a = 0, hw = 10.361, hl = 12.102, h = 32.468, color = "#d9c2a7" },
+			{ type = "building", x = 93.5, z = 20, a = 0, hw = 5.307, hl = 10.052, h = 30.164, color = "#c7b8a1" },
+			{ type = "building", x = 106.5, z = 20, a = 0, hw = 5.323, hl = 12.684, h = 26.223, color = "#cdb4a0" },
+			{ type = "building", x = 93.5, z = 60, a = 0, hw = 5.965, hl = 9.646, h = 29.58, color = "#cdb4a0" },
+			{ type = "building", x = 106.5, z = 60, a = 0, hw = 5.815, hl = 11.729, h = 31.952, color = "#a7b6c2" },
+			{ type = "building", x = 100, z = 100, a = 0, hw = 10.356, hl = 9.644, h = 10.617, color = "#e6e1d6" }
+		},
+		lines = {
+			{ x = -120, z = -107.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -107.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = -101.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -101.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = -95.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -95.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = -89.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -89.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = -71.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -71.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = -65.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -65.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = -59.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -59.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = -53.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -53.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = -47.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -47.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = -29.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -29.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = -23.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -23.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = -17.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -17.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = -11.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -11.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = 12.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 12.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = 18.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 18.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = 24.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 24.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = 30.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 30.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = 48.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 48.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = 54.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 54.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = 60.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 60.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = 66.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 66.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = 72.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 72.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = 90.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 90.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = 96.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 96.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = 102.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 102.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -120, z = 108.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 108.5, z = -120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = -107.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -107.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = -101.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -101.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = -95.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -95.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = -89.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -89.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = -71.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -71.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = -65.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -65.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = -59.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -59.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = -53.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -53.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = -47.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -47.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = -29.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -29.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = -23.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -23.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = -17.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -17.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = -11.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -11.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = 12.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 12.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = 18.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 18.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = 24.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 24.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = 30.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 30.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = 48.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 48.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = 54.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 54.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = 60.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 60.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = 66.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 66.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = 72.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 72.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = 90.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 90.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = 96.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 96.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = 102.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 102.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -80, z = 108.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 108.5, z = -80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = -107.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -107.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = -101.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -101.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = -95.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -95.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = -89.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -89.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = -71.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -71.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = -65.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -65.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = -59.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -59.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = -53.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -53.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = -47.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -47.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = -29.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -29.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = -23.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -23.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = -17.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -17.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = -11.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -11.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = 12.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 12.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = 18.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 18.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = 24.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 24.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = 30.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 30.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = 48.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 48.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = 54.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 54.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = 60.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 60.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = 66.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 66.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = 72.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 72.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = 90.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 90.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = 96.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 96.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = 102.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 102.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -40, z = 108.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 108.5, z = -40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = -107.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -107.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = -101.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -101.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = -95.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -95.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = -89.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -89.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = -71.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -71.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = -65.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -65.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = -59.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -59.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = -53.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -53.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = -47.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -47.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = -29.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -29.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = -23.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -23.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = -17.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -17.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = -11.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -11.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = 12.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 12.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = 18.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 18.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = 24.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 24.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = 30.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 30.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = 48.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 48.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = 54.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 54.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = 60.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 60.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = 66.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 66.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = 72.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 72.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = 90.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 90.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = 96.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 96.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = 102.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 102.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 0, z = 108.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 108.5, z = 0, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = -107.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -107.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = -101.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -101.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = -95.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -95.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = -89.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -89.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = -71.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -71.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = -65.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -65.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = -59.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -59.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = -53.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -53.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = -47.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -47.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = -29.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -29.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = -23.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -23.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = -17.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -17.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = -11.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -11.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = 12.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 12.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = 18.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 18.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = 24.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 24.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = 30.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 30.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = 48.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 48.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = 54.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 54.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = 60.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 60.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = 66.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 66.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = 72.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 72.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = 90.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 90.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = 96.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 96.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = 102.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 102.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 40, z = 108.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 108.5, z = 40, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = -107.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -107.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = -101.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -101.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = -95.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -95.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = -89.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -89.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = -71.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -71.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = -65.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -65.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = -59.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -59.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = -53.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -53.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = -47.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -47.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = -29.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -29.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = -23.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -23.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = -17.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -17.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = -11.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -11.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = 12.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 12.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = 18.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 18.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = 24.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 24.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = 30.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 30.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = 48.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 48.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = 54.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 54.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = 60.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 60.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = 66.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 66.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = 72.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 72.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = 90.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 90.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = 96.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 96.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = 102.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 102.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 80, z = 108.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 108.5, z = 80, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = -107.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -107.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = -101.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -101.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = -95.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -95.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = -89.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -89.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = -71.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -71.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = -65.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -65.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = -59.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -59.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = -53.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -53.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = -47.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -47.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = -29.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -29.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = -23.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -23.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = -17.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -17.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = -11.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = -11.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = 12.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 12.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = 18.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 18.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = 24.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 24.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = 30.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 30.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = 48.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 48.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = 54.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 54.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = 60.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 60.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = 66.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 66.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = 72.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 72.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = 90.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 90.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = 96.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 96.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = 102.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 102.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = 120, z = 108.5, a = 0, w = 0.2, l = 3, color = "yellow" },
+			{ x = 108.5, z = 120, a = 1.571, w = 0.2, l = 3, color = "yellow" },
+			{ x = -72.6, z = 53, a = 0, w = 0.12, l = 5.6 },
+			{ x = -69.8, z = 53, a = 0, w = 0.12, l = 5.6 },
+			{ x = -67, z = 53, a = 0, w = 0.12, l = 5.6 },
+			{ x = -64.2, z = 53, a = 0, w = 0.12, l = 5.6 },
+			{ x = -61.4, z = 53, a = 0, w = 0.12, l = 5.6 },
+			{ x = -58.6, z = 53, a = 0, w = 0.12, l = 5.6 },
+			{ x = -55.8, z = 53, a = 0, w = 0.12, l = 5.6 },
+			{ x = -53, z = 53, a = 0, w = 0.12, l = 5.6 },
+			{ x = -50.2, z = 53, a = 0, w = 0.12, l = 5.6 },
+			{ x = -47.4, z = 53, a = 0, w = 0.12, l = 5.6 },
+			{ x = -60, z = 50.2, a = 1.571, w = 0.12, l = 25.2 },
+			{ x = -47.4, z = 67, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -50.2, z = 67, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -53, z = 67, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -55.8, z = 67, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -58.6, z = 67, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -61.4, z = 67, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -64.2, z = 67, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -67, z = 67, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -69.8, z = 67, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -72.6, z = 67, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -60, z = 69.8, a = -1.571, w = 0.12, l = 25.2 },
+			{ x = -32.6, z = -67, a = 0, w = 0.12, l = 5.6 },
+			{ x = -29.8, z = -67, a = 0, w = 0.12, l = 5.6 },
+			{ x = -27, z = -67, a = 0, w = 0.12, l = 5.6 },
+			{ x = -24.2, z = -67, a = 0, w = 0.12, l = 5.6 },
+			{ x = -21.4, z = -67, a = 0, w = 0.12, l = 5.6 },
+			{ x = -18.6, z = -67, a = 0, w = 0.12, l = 5.6 },
+			{ x = -15.8, z = -67, a = 0, w = 0.12, l = 5.6 },
+			{ x = -13, z = -67, a = 0, w = 0.12, l = 5.6 },
+			{ x = -10.2, z = -67, a = 0, w = 0.12, l = 5.6 },
+			{ x = -7.4, z = -67, a = 0, w = 0.12, l = 5.6 },
+			{ x = -20, z = -69.8, a = 1.571, w = 0.12, l = 25.2 },
+			{ x = -7.4, z = -53, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -10.2, z = -53, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -13, z = -53, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -15.8, z = -53, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -18.6, z = -53, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -21.4, z = -53, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -24.2, z = -53, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -27, z = -53, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -29.8, z = -53, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -32.6, z = -53, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = -20, z = -50.2, a = -1.571, w = 0.12, l = 25.2 },
+			{ x = 7.4, z = 13, a = 0, w = 0.12, l = 5.6 },
+			{ x = 10.2, z = 13, a = 0, w = 0.12, l = 5.6 },
+			{ x = 13, z = 13, a = 0, w = 0.12, l = 5.6 },
+			{ x = 15.8, z = 13, a = 0, w = 0.12, l = 5.6 },
+			{ x = 18.6, z = 13, a = 0, w = 0.12, l = 5.6 },
+			{ x = 21.4, z = 13, a = 0, w = 0.12, l = 5.6 },
+			{ x = 24.2, z = 13, a = 0, w = 0.12, l = 5.6 },
+			{ x = 27, z = 13, a = 0, w = 0.12, l = 5.6 },
+			{ x = 29.8, z = 13, a = 0, w = 0.12, l = 5.6 },
+			{ x = 32.6, z = 13, a = 0, w = 0.12, l = 5.6 },
+			{ x = 20, z = 10.2, a = 1.571, w = 0.12, l = 25.2 },
+			{ x = 32.6, z = 27, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 29.8, z = 27, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 27, z = 27, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 24.2, z = 27, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 21.4, z = 27, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 18.6, z = 27, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 15.8, z = 27, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 13, z = 27, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 10.2, z = 27, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 7.4, z = 27, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 20, z = 29.8, a = -1.571, w = 0.12, l = 25.2 },
+			{ x = 47.4, z = -27, a = 0, w = 0.12, l = 5.6 },
+			{ x = 50.2, z = -27, a = 0, w = 0.12, l = 5.6 },
+			{ x = 53, z = -27, a = 0, w = 0.12, l = 5.6 },
+			{ x = 55.8, z = -27, a = 0, w = 0.12, l = 5.6 },
+			{ x = 58.6, z = -27, a = 0, w = 0.12, l = 5.6 },
+			{ x = 61.4, z = -27, a = 0, w = 0.12, l = 5.6 },
+			{ x = 64.2, z = -27, a = 0, w = 0.12, l = 5.6 },
+			{ x = 67, z = -27, a = 0, w = 0.12, l = 5.6 },
+			{ x = 69.8, z = -27, a = 0, w = 0.12, l = 5.6 },
+			{ x = 72.6, z = -27, a = 0, w = 0.12, l = 5.6 },
+			{ x = 60, z = -29.8, a = 1.571, w = 0.12, l = 25.2 },
+			{ x = 72.6, z = -13, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 69.8, z = -13, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 67, z = -13, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 64.2, z = -13, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 61.4, z = -13, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 58.6, z = -13, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 55.8, z = -13, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 53, z = -13, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 50.2, z = -13, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 47.4, z = -13, a = 3.142, w = 0.12, l = 5.6 },
+			{ x = 60, z = -10.2, a = -1.571, w = 0.12, l = 25.2 }
+		},
+		roads = {
+			{ x = -120, z = 0, w = 12, l = 260 },
+			{ x = 0, z = -120, w = 260, l = 12 },
+			{ x = -80, z = 0, w = 12, l = 260 },
+			{ x = 0, z = -80, w = 260, l = 12 },
+			{ x = -40, z = 0, w = 12, l = 260 },
+			{ x = 0, z = -40, w = 260, l = 12 },
+			{ x = 0, z = 0, w = 12, l = 260 },
+			{ x = 0, z = 0, w = 260, l = 12 },
+			{ x = 40, z = 0, w = 12, l = 260 },
+			{ x = 0, z = 40, w = 260, l = 12 },
+			{ x = 80, z = 0, w = 12, l = 260 },
+			{ x = 0, z = 80, w = 260, l = 12 },
+			{ x = 120, z = 0, w = 12, l = 260 },
+			{ x = 0, z = 120, w = 260, l = 12 }
+		},
+		coins = {
+			{ x = -99.718, z = 77.526 },
+			{ x = 38.574, z = -17.078 },
+			{ x = 122.469, z = 76.291 },
+			{ x = 83.514, z = 79.699 },
+			{ x = 118.015, z = -81.159 },
+			{ x = -58.894, z = 77.994 },
+			{ x = 41.904, z = 3.175 },
+			{ x = -65.614, z = 119.296 },
+			{ x = -122.888, z = -68.573 },
+			{ x = -117.278, z = 98.826 },
+			{ x = 42.043, z = 104.593 },
+			{ x = -2.377, z = 112.588 },
+			{ x = 41.32, z = 34.145 },
+			{ x = 38.625, z = 26.422 },
+			{ x = -117.735, z = -73.371 },
+			{ x = 121.549, z = 58.509 },
+			{ x = 104.846, z = 80.259 },
+			{ x = 79.871, z = 0.895 },
+			{ x = 40.776, z = 65.34 },
+			{ x = 89.782, z = 39.118 },
+			{ x = 10.775, z = 38.498 },
+			{ x = -89.328, z = 78.09 },
+			{ x = 117.12, z = 8.451 },
+			{ x = 34.766, z = 121.041 },
+			{ x = 117.366, z = 48.923 },
+			{ x = 1.11, z = -78.34 },
+			{ x = -2.516, z = -75.946 },
+			{ x = 38.144, z = -0.949 },
+			{ x = 38.26, z = -56.707 },
+			{ x = 26.114, z = 118.903 },
+			{ x = -36.291, z = 121.077 },
+			{ x = -3.644, z = 39.517 },
+			{ x = 80.454, z = -76.008 },
+			{ x = 42.165, z = 48.311 },
+			{ x = -102.063, z = -122.881 },
+			{ x = -80.623, z = 103.931 },
+			{ x = -76.371, z = -122.161 },
+			{ x = -82.182, z = 12.78 },
+			{ x = 121.651, z = 24.438 },
+			{ x = 119.386, z = -82.493 }
+		}
+	},
+	TUNING = {
+		spoiler = {
+			label = "Alerón",
+			options = {
+				{ id = "stock", name = "De serie", price = 0 },
+				{ id = "lip", name = "Labio", price = 300 },
+				{ id = "ducktail", name = "Cola de pato", price = 700 },
+				{ id = "gt", name = "Alerón GT", price = 1500 }
+			}
+		},
+		kit = {
+			label = "Body kit",
+			options = {
+				{ id = "stock", name = "De serie", price = 0 },
+				{ id = "sport", name = "Deportivo", price = 1200 },
+				{ id = "wide", name = "Carrocería ancha", price = 3000 }
+			}
+		},
+		rims = {
+			label = "Llantas",
+			options = {
+				{ id = "stock", name = "De serie", price = 0 },
+				{ id = "black", name = "Negras", price = 250, value = "#1b1c1f" },
+				{ id = "white", name = "Blancas", price = 250, value = "#e9ecef" },
+				{ id = "gold", name = "Doradas", price = 400, value = "#b8913a" },
+				{ id = "red", name = "Rojas", price = 300, value = "#b4161b" },
+				{ id = "chrome", name = "Cromadas", price = 500, value = "#f2f4f7" }
+			}
+		},
+		height = {
+			label = "Suspensión",
+			options = {
+				{ id = "stock", name = "De serie", price = 0, value = 0 },
+				{ id = "low", name = "Rebajada", price = 800, value = -0.03 },
+				{ id = "slammed", name = "Muy rebajada", price = 1500, value = -0.055 }
+			}
+		},
+		neon = {
+			label = "Neón",
+			options = {
+				{ id = "stock", name = "Sin neón", price = 0 },
+				{ id = "blue", name = "Azul", price = 500, value = "#2f7bff" },
+				{ id = "purple", name = "Morado", price = 500, value = "#a24bff" },
+				{ id = "green", name = "Verde", price = 500, value = "#22e06b" },
+				{ id = "red", name = "Rojo", price = 500, value = "#ff2d2d" },
+				{ id = "white", name = "Blanco", price = 500, value = "#f4f7ff" }
+			}
+		}
+	},
+	TUNING_ORDER = { "spoiler", "kit", "rims", "height", "neon" }
+}
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX00000003"><Properties><string name="Name">LevelBuilder</string><ProtectedString name="Source"><![CDATA[-- Construye un nivel (o la ciudad) a partir de GameData, con su esquina de referencia en `origin`.
+-- Devuelve { folder, obstacles, target (Part o nil), targetHW, targetHL, startCF, coins = { Part } }.
+local Shared = script.Parent
+local Config = require(Shared.Config)
+local CarBuilder = require(Shared.CarBuilder)
+
+local S = Config.SCALE
+local LevelBuilder = {}
+
+local function newPart(parent, props)
+	local p = Instance.new("Part")
+	p.Anchored = true
+	p.TopSurface = Enum.SurfaceType.Smooth
+	p.BottomSurface = Enum.SurfaceType.Smooth
+	for k, v in pairs(props) do p[k] = v end
+	p.Parent = parent
+	return p
+end
+
+local function folder(name, parent)
+	local f = Instance.new("Folder")
+	f.Name = name
+	f.Parent = parent
+	return f
+end
+
+-- data: un nivel de GameData.LEVELS o GameData.CITY. city = true para la ciudad.
+function LevelBuilder.build(data, origin, parent, city)
+	local root = folder(data.name, parent)
+	local obstacles = folder("Obstacles", root)
+	local decor = folder("Decor", root)
+	local b = data.bounds
+	local W, L = (b.maxX - b.minX) * S, (b.maxZ - b.minZ) * S
+	local center = origin + Vector3.new((b.minX + b.maxX) / 2 * S, 0, (b.minZ + b.maxZ) / 2 * S)
+
+	-- Suelo: césped alrededor y asfalto (u hormigón en la ciudad) dentro del recinto.
+	newPart(decor, {
+		Name = "Grass", Size = Vector3.new(W + 260, 1, L + 260), CFrame = CFrame.new(center - Vector3.new(0, 0.55, 0)),
+		Color = Color3.fromRGB(79, 138, 58), Material = Enum.Material.Grass,
+	})
+	newPart(decor, {
+		Name = "Floor", Size = Vector3.new(W + 4, 1, L + 4), CFrame = CFrame.new(center - Vector3.new(0, 0.5, 0)),
+		Color = city and Color3.fromRGB(185, 182, 174) or (data.indoor and Color3.fromRGB(70, 72, 76) or Color3.fromRGB(85, 88, 92)),
+		Material = city and Enum.Material.Concrete or Enum.Material.Asphalt,
+	})
+
+	if data.roads then
+		for _, r in ipairs(data.roads) do
+			newPart(decor, {
+				Name = "Road", Size = Vector3.new(r.w * S, 0.2, r.l * S), CFrame = CFrame.new(origin + Vector3.new(r.x * S, -0.09, r.z * S)),
+				Color = Color3.fromRGB(62, 64, 68), Material = Enum.Material.Asphalt, CanCollide = false,
+			})
+		end
+	end
+
+	for _, ln in ipairs(data.lines) do
+		newPart(decor, {
+			Name = "Line", Size = Vector3.new(ln.w * S, 0.05, ln.l * S),
+			CFrame = CarBuilder.faceCF(origin, ln.x, ln.z, ln.a, 0.03),
+			Color = ln.color == "yellow" and Color3.fromRGB(245, 197, 24) or Color3.fromRGB(242, 242, 242),
+			Material = Enum.Material.SmoothPlastic, CanCollide = false, CanQuery = false, CanTouch = false,
+		})
+	end
+
+	for _, o in ipairs(data.obstacles) do
+		local t = o.type
+		if t == "wall" then
+			local h = (o.h or 1.1) * S
+			local cf = CarBuilder.faceCF(origin, o.x, o.z, o.a, h / 2)
+			newPart(obstacles, { Name = "Wall", Size = Vector3.new(o.hw * 2 * S, h, o.hl * 2 * S), CFrame = cf, Color = Color3.fromRGB(168, 164, 154), Material = Enum.Material.Concrete })
+			newPart(decor, { Name = "WallCap", Size = Vector3.new(o.hw * 2 * S + 0.05, 0.3, o.hl * 2 * S + 0.05), CFrame = cf + Vector3.new(0, h / 2, 0), Color = Color3.fromRGB(242, 194, 0), CanCollide = false, CanQuery = false })
+		elseif t == "car" then
+			local car = CarBuilder.build(o.model, { parked = true, color = CarBuilder.hexToColor(o.color) })
+			car:PivotTo(CarBuilder.faceCF(origin, o.x, o.z, o.a, car.PrimaryPart.Position.Y))
+			car.Parent = obstacles
+		elseif t == "cone" then
+			local pos = origin + Vector3.new(o.x * S, 0, o.z * S)
+			local up = CFrame.Angles(0, 0, math.rad(90))
+			newPart(obstacles, { Name = "Cone", Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.72 * S, 0.4 * S, 0.4 * S), CFrame = CFrame.new(pos + Vector3.new(0, 0.36 * S, 0)) * up, Color = Color3.fromRGB(255, 90, 0) })
+			newPart(decor, { Name = "ConeBand", Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.12 * S, 0.42 * S, 0.42 * S), CFrame = CFrame.new(pos + Vector3.new(0, 0.45 * S, 0)) * up, Color = Color3.new(1, 1, 1), CanCollide = false, CanQuery = false })
+		elseif t == "pillar" then
+			local pos = origin + Vector3.new(o.x * S, 0, o.z * S)
+			newPart(obstacles, { Name = "Pillar", Shape = Enum.PartType.Cylinder, Size = Vector3.new(3.4 * S, o.r * 2 * S, o.r * 2 * S), CFrame = CFrame.new(pos + Vector3.new(0, 1.7 * S, 0)) * CFrame.Angles(0, 0, math.rad(90)), Color = Color3.fromRGB(201, 197, 187), Material = Enum.Material.Concrete })
+			newPart(decor, { Name = "PillarBand", Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.45 * S, o.r * 2 * S + 0.1, o.r * 2 * S + 0.1), CFrame = CFrame.new(pos + Vector3.new(0, 0.25 * S, 0)) * CFrame.Angles(0, 0, math.rad(90)), Color = Color3.fromRGB(242, 194, 0), CanCollide = false, CanQuery = false })
+		elseif t == "building" then
+			local h = o.h * S
+			local cf = CarBuilder.faceCF(origin, o.x, o.z, o.a or 0, h / 2)
+			newPart(obstacles, { Name = "Building", Size = Vector3.new(o.hw * 2 * S, h, o.hl * 2 * S), CFrame = cf, Color = CarBuilder.hexToColor(o.color), Material = Enum.Material.Concrete })
+			-- franjas de ventanas en cada planta
+			for floorY = 3 * S, h - 2 * S, 3 * S do
+				newPart(decor, { Name = "Windows", Size = Vector3.new(o.hw * 2 * S + 0.2, 1.2 * S, o.hl * 2 * S + 0.2), CFrame = CarBuilder.faceCF(origin, o.x, o.z, o.a or 0, floorY), Color = Color3.fromRGB(59, 74, 92), Material = Enum.Material.Glass, Reflectance = 0.2, CanCollide = false, CanQuery = false })
+			end
+		end
+	end
+
+	local result = { folder = root, obstacles = obstacles, coins = {} }
+	local st = data.start
+	result.startCF = CarBuilder.faceCF(origin, st.x, st.z, st.a, 0)
+
+	-- Plaza objetivo: superficie amarilla y un cartel flotante.
+	if data.target then
+		local t = data.target
+		local spot = newPart(root, {
+			Name = "Target", Size = Vector3.new(t.hw * 2 * S, 0.06, t.hl * 2 * S), CFrame = CarBuilder.faceCF(origin, t.x, t.z, t.a, 0.04),
+			Color = Color3.fromRGB(255, 212, 0), Material = Enum.Material.Neon, Transparency = 0.55, CanCollide = false, CanQuery = false, CanTouch = false,
+		})
+		local gui = Instance.new("BillboardGui")
+		gui.Size = UDim2.fromOffset(150, 46)
+		gui.StudsOffset = Vector3.new(0, 3 * S, 0)
+		gui.AlwaysOnTop = true
+		gui.Parent = spot
+		local label = Instance.new("TextLabel")
+		label.Size = UDim2.fromScale(1, 1)
+		label.BackgroundTransparency = 1
+		label.Text = "▼ APARCA AQUÍ"
+		label.Font = Enum.Font.GothamBlack
+		label.TextScaled = true
+		label.TextColor3 = Color3.fromRGB(255, 212, 0)
+		label.TextStrokeTransparency = 0.3
+		label.Parent = gui
+		result.target = spot
+		result.targetHW = t.hw * S
+		result.targetHL = t.hl * S
+	end
+
+	-- Monedas (ciudad)
+	if data.coins then
+		local coins = folder("Coins", root)
+		for i, c in ipairs(data.coins) do
+			local coin = newPart(coins, {
+				Name = "Coin", Shape = Enum.PartType.Cylinder, Size = Vector3.new(0.15 * S, 1.1 * S, 1.1 * S),
+				CFrame = CFrame.new(origin + Vector3.new(c.x * S, 1 * S, c.z * S)) * CFrame.Angles(0, math.rad(90), 0),
+				Color = Color3.fromRGB(255, 200, 61), Material = Enum.Material.Neon, CanCollide = false, CanTouch = false,
+			})
+			coin:SetAttribute("CoinId", i)
+			result.coins[i] = coin
+		end
+	end
+
+	return result
+end
+
+return LevelBuilder
+]]></ProtectedString></Properties></Item><Item class="ModuleScript" referent="RBX00000004"><Properties><string name="Name">Physics</string><ProtectedString name="Source"><![CDATA[-- Física del coche (misma que la versión web, en metros y m/s).
+-- Roblox mueve y gira la pieza; aquí se calcula qué velocidad y giro debe tener en cada momento.
+-- Estado c: v (hacia delante), vl (lateral, + = izquierda), steer (ángulo de ruedas), gear (1 o -1).
+-- inp: throttle 0..1, brake 0..1, steer -1..1 (+ = izquierda), handbrake bool.
+local Physics = {}
+
+local function clamp(x, lo, hi)
+	if x < lo then return lo end
+	if x > hi then return hi end
+	return x
+end
+Physics.clamp = clamp
+
+local function sign(x)
+	if x > 0 then return 1 elseif x < 0 then return -1 end
+	return 0
+end
+
+function Physics.step(c, inp, s, dt)
+	local sp = math.abs(c.v)
+	local drifting = inp.handbrake and sp > 4
+	local target = clamp(inp.steer, -1, 1) * s.maxSteer
+	-- A velocidad, los neumáticos no dan más agarre lateral que `grip`: el coche subvira.
+	if sp > 1 then
+		local lim = math.atan((s.grip * (drifting and 2.2 or 1) * s.wb) / (sp * sp))
+		target = clamp(target, -lim, lim)
+	end
+	local rate = (s.steerRate / (1 + sp / 14)) * dt
+	c.steer = c.steer + clamp(target - c.steer, -rate, rate)
+
+	-- Motor: empuja con fuerza al salir y pierde empuje cerca de la velocidad máxima.
+	local v = c.v
+	if inp.throttle > 0 then
+		local top = c.gear > 0 and s.maxSpeed or s.maxReverse
+		local moving = 0
+		if sign(v) == c.gear then moving = math.min(1, sp / top) end
+		v = v + c.gear * s.accel * inp.throttle * (1 - 0.75 * moving * moving) * dt
+	end
+	local dec = 0.6 + 0.0035 * v * v
+	if inp.brake > 0 then dec = dec + s.brake * inp.brake end
+	if inp.handbrake then dec = dec + s.brake * 0.55 end
+	local dv = dec * dt
+	if math.abs(v) <= dv then v = 0 else v = v - sign(v) * dv end
+	c.v = clamp(v, -s.maxReverse, s.maxSpeed)
+	c.braking = inp.brake > 0 or inp.handbrake
+
+	-- Giro alrededor del eje trasero: el centro se mueve de lado a (wb/2)·yaw.
+	-- Con el freno de mano a velocidad las ruedas traseras se sueltan (derrape).
+	local yaw = (c.v / s.wb) * math.tan(c.steer)
+	if drifting then yaw = yaw * 1.4 end
+	local vlTarget = s.wb / 2 * yaw
+	local grip = 60
+	if drifting then grip = 1.6 elseif sp > 1 then grip = 30 end
+	c.vl = c.vl + (vlTarget - c.vl) * (1 - math.exp(-grip * dt))
+	c.slip = math.abs(c.vl - vlTarget)
+	c.yaw = yaw
+end
+
+-- Marcha y revoluciones (para el sonido y el marcador).
+function Physics.drivetrain(d, e, v, throttle, dt)
+	local sp = math.abs(v)
+	local g = d.gear
+	while g < #e.gears and sp > e.gears[g] * 0.9 do g = g + 1 end
+	while g > 1 and sp < e.gears[g - 1] * 0.55 do g = g - 1 end
+	d.gear = g
+	local target = e.idle + (e.red - e.idle) * math.min(1, sp / e.gears[g])
+	if sp < 0.5 then target = e.idle + throttle * (e.red - e.idle) * 0.3 end
+	d.rpm = d.rpm + (target - d.rpm) * math.min(1, dt * 7)
+end
+
+-- ¿Está el rectángulo del coche dentro de la plaza y alineado con ella?
+-- carCF: CFrame del coche; spotCF: CFrame de la plaza; tamaños en studs (medio ancho / medio largo).
+function Physics.parkedIn(carCF, carHW, carHL, spotCF, spotHW, spotHL)
+	for _, sx in ipairs({ -1, 1 }) do
+		for _, sz in ipairs({ -1, 1 }) do
+			local corner = carCF * Vector3.new(sx * carHW, 0, sz * carHL)
+			local lp = spotCF:PointToObjectSpace(corner)
+			if math.abs(lp.X) > spotHW or math.abs(lp.Z) > spotHL then return false end
+		end
+	end
+	local d = math.abs(carCF.LookVector:Dot(spotCF.LookVector))
+	return d > math.cos(0.22)
+end
+
+return Physics
+]]></ProtectedString></Properties></Item></Item><Item class="Folder" referent="RBX00000007"><Properties><string name="Name">Cars</string></Properties></Item></Item><Item class="ServerScriptService" referent="RBX00000009"><Properties><string name="Name">ServerScriptService</string></Properties><Item class="Script" referent="RBX00000008"><Properties><string name="Name">ParkingServer</string><ProtectedString name="Source"><![CDATA[-- Servidor de Parking Pro 3D: partidas guardadas, compras, recompensas validadas,
+-- niveles privados de cada jugador, ciudad compartida con monedas y panel de admin.
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local DataStoreService = game:GetService("DataStoreService")
+local Lighting = game:GetService("Lighting")
+
+local Shared = ReplicatedStorage:WaitForChild("ParkingShared")
+local Config = require(Shared.Config)
+local GameData = require(Shared.GameData)
+local CarBuilder = require(Shared.CarBuilder)
+local LevelBuilder = require(Shared.LevelBuilder)
+local Physics = require(Shared.Physics)
+
+local S = Config.SCALE
+
+-- ---------- Comunicación con los jugadores ----------
+local remotes = Instance.new("Folder")
+remotes.Name = "ParkingRemotes"
+local request = Instance.new("RemoteFunction")
+request.Name = "Request"
+request.Parent = remotes
+local profileChanged = Instance.new("RemoteEvent")
+profileChanged.Name = "ProfileChanged"
+profileChanged.Parent = remotes
+local coinTaken = Instance.new("RemoteEvent")
+coinTaken.Name = "CoinTaken"
+coinTaken.Parent = remotes
+remotes.Parent = ReplicatedStorage
+
+if not ReplicatedStorage:FindFirstChild("Cars") then
+	local cars = Instance.new("Folder")
+	cars.Name = "Cars"
+	cars.Parent = ReplicatedStorage
+end
+
+-- ---------- Ambiente ----------
+Lighting.ClockTime = 14
+Lighting.Brightness = 2.5
+Lighting.OutdoorAmbient = Color3.fromRGB(150, 155, 165)
+Lighting.GlobalShadows = true
+
+-- ---------- Ciudad compartida ----------
+local carsFolder = Instance.new("Folder")
+carsFolder.Name = "PlayerCars"
+carsFolder.Parent = workspace
+local levelsFolder = Instance.new("Folder")
+levelsFolder.Name = "PlayerLevels"
+levelsFolder.Parent = workspace
+
+local city = LevelBuilder.build(GameData.CITY, Vector3.new(), workspace, true)
+city.folder.Name = "City"
+local spawn = Instance.new("SpawnLocation")
+spawn.Name = "CitySpawn"
+spawn.Anchored = true
+spawn.Size = Vector3.new(8, 1, 8)
+spawn.CFrame = CFrame.new(8 * S, -0.4, 8 * S)
+spawn.Transparency = 0.5
+spawn.Color = Color3.fromRGB(255, 180, 0)
+spawn.Neutral = true
+spawn.Parent = city.folder
+
+-- ---------- Partidas guardadas ----------
+local store = DataStoreService:GetDataStore(Config.DATASTORE_NAME)
+local profiles = {}
+local states = {}
+
+local function defaultProfile()
+	return {
+		coins = Config.START_COINS, owned = { "sedan" }, car = "sedan", color = "#d62828",
+		stars = {}, tuning = {}, parts = {}, god = false,
+	}
+end
+
+local function contains(list, value)
+	for _, v in ipairs(list) do
+		if v == value then return true end
+	end
+	return false
+end
+
+local function isAdmin(player)
+	if game.CreatorType == Enum.CreatorType.User and player.UserId == game.CreatorId then return true end
+	if game:GetService("RunService"):IsStudio() then return true end
+	return contains(Config.ADMIN_USER_IDS, player.UserId)
+end
+
+local function publicProfile(player)
+	local p = profiles[player]
+	if not p then return nil end
+	return {
+		coins = p.coins, owned = p.owned, car = p.car, color = p.color, stars = p.stars,
+		tuning = p.tuning, parts = p.parts, god = p.god, admin = isAdmin(player),
+	}
+end
+
+local function changed(player)
+	local p = profiles[player]
+	if not p then return end
+	local ls = player:FindFirstChild("leaderstats")
+	if ls and ls:FindFirstChild("Monedas") then ls.Monedas.Value = p.coins end
+	profileChanged:FireClient(player, publicProfile(player))
+end
+
+local function save(player)
+	local p = profiles[player]
+	if not p then return end
+	local ok, err = pcall(function()
+		store:SetAsync("u_" .. player.UserId, p)
+	end)
+	if not ok then warn("No se pudo guardar la partida de " .. player.Name .. ": " .. tostring(err)) end
+end
+
+local function load(player)
+	local data
+	local ok, err = pcall(function()
+		data = store:GetAsync("u_" .. player.UserId)
+	end)
+	if not ok then warn("No se pudo cargar la partida (¿API Services desactivado en Studio?): " .. tostring(err)) end
+	local p = defaultProfile()
+	if type(data) == "table" then
+		for k, v in pairs(data) do p[k] = v end
+	end
+	return p
+end
+
+-- ---------- Coches ----------
+local slots = {}
+
+local function setCharacterVisible(character, visible)
+	if not character then return end
+	for _, d in ipairs(character:GetDescendants()) do
+		if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" then
+			if visible then
+				d.Transparency = d:GetAttribute("OriginalTransparency") or d.Transparency
+			else
+				if d:GetAttribute("OriginalTransparency") == nil then d:SetAttribute("OriginalTransparency", d.Transparency) end
+				d.Transparency = 1
+			end
+		elseif d:IsA("Decal") then
+			d.Transparency = visible and 0 or 1
+		end
+	end
+end
+
+local function despawn(player)
+	local st = states[player]
+	if not st then return end
+	if st.car then st.car:Destroy() end
+	if st.level then st.level.folder:Destroy() end
+	if st.slot then slots[st.slot] = nil end
+	states[player] = nil
+	local character = player.Character
+	if character then
+		setCharacterVisible(character, true)
+		local hum = character:FindFirstChildOfClass("Humanoid")
+		if hum then hum.Sit = false end
+		task.defer(function()
+			if character.Parent then character:PivotTo(spawn.CFrame + Vector3.new(0, 4, 0)) end
+		end)
+	end
+end
+
+local function spawnCar(player, cf)
+	local p = profiles[player]
+	local key = p.car
+	local tune = p.tuning[key] or {}
+	local car = CarBuilder.build(key, {
+		color = CarBuilder.hexToColor(p.color), rims = tune.rims, height = tune.height, neon = tune.neon,
+	})
+	car.Name = player.Name .. "_" .. key
+	car:SetAttribute("Owner", player.UserId)
+	local lift = car.PrimaryPart.Position.Y + 0.3
+	car:PivotTo(cf + Vector3.new(0, lift, 0))
+	car.Parent = carsFolder
+	car.PrimaryPart:SetNetworkOwner(player)
+	local character = player.Character
+	local hum = character and character:FindFirstChildOfClass("Humanoid")
+	if hum then
+		car.Seat:Sit(hum)
+		setCharacterVisible(character, false)
+	end
+	return car
+end
+
+local function freeSlot()
+	local i = 1
+	while slots[i] do i = i + 1 end
+	return i
+end
+
+local function starsOf(p, i)
+	return p.stars[tostring(i)] or 0
+end
+
+local function startLevel(player, index)
+	local p = profiles[player]
+	local lv = GameData.LEVELS[index]
+	if not lv then return { ok = false, error = "Ese nivel no existe" } end
+	if index > 1 and starsOf(p, index - 1) == 0 and not isAdmin(player) then
+		return { ok = false, error = "Completa el nivel anterior" }
+	end
+	despawn(player)
+	local slot = freeSlot()
+	slots[slot] = player
+	local origin = Config.LEVEL_ORIGIN + Vector3.new(0, 0, (slot - 1) * Config.LEVEL_SPACING)
+	local built = LevelBuilder.build(lv, origin, levelsFolder, false)
+	built.folder.Name = player.Name .. "_nivel" .. index
+	local car = spawnCar(player, built.startCF)
+	states[player] = { mode = "level", index = index, slot = slot, level = built, car = car, startTime = os.clock(), over = false }
+	-- Se envían nombres (no objetos): el cliente espera a que le lleguen con WaitForChild.
+	return {
+		ok = true, mode = "level", index = index, name = lv.name, hint = lv.hint, par = lv.par,
+		carName = car.Name, levelName = built.folder.Name,
+		targetCF = built.target.CFrame, targetHW = built.targetHW, targetHL = built.targetHL,
+		god = p.god,
+	}
+end
+
+local function startCity(player)
+	despawn(player)
+	local cf = city.startCF + Vector3.new(math.random(-3, 3) * S, 0, 0)
+	local car = spawnCar(player, cf)
+	states[player] = { mode = "city", car = car }
+	return { ok = true, mode = "city", carName = car.Name, hint = GameData.CITY.hint }
+end
+
+local function levelDone(player, index)
+	local st = states[player]
+	local p = profiles[player]
+	if not st or st.mode ~= "level" or st.index ~= index or st.over then return { ok = false } end
+	-- Comprobación en el servidor: el coche tiene que estar de verdad en la plaza.
+	local chassis = st.car and st.car.PrimaryPart
+	if not chassis then return { ok = false } end
+	local spec = GameData.CARS[st.car:GetAttribute("CarKey")]
+	local tol = 1.5
+	local inside = Physics.parkedIn(chassis.CFrame, spec.w * S / 2 - tol, spec.l * S / 2 - tol, st.level.target.CFrame, st.level.targetHW, st.level.targetHL)
+	local elapsed = os.clock() - st.startTime
+	if not inside or elapsed < 2 then return { ok = false, error = "No estás aparcado en la plaza" } end
+	st.over = true
+	local par = GameData.LEVELS[index].par
+	local stars = 1
+	if elapsed <= par then stars = 3 elseif elapsed <= par * 1.6 then stars = 2 end
+	local first = starsOf(p, index) == 0
+	local reward = (first and (100 + (index - 1) * 25) or 20) + stars * 20
+	p.stars[tostring(index)] = math.max(starsOf(p, index), stars)
+	p.coins = p.coins + reward
+	changed(player)
+	return { ok = true, stars = stars, reward = reward, time = elapsed, hasNext = GameData.LEVELS[index + 1] ~= nil }
+end
+
+-- ---------- Monedas de la ciudad ----------
+local coinTakenAt = {}
+local function collectCoin(player, id)
+	local st = states[player]
+	local coin = city.coins[id]
+	if not st or st.mode ~= "city" or not coin or coinTakenAt[id] then return { ok = false } end
+	local chassis = st.car and st.car.PrimaryPart
+	if not chassis or (chassis.Position - coin.Position).Magnitude > 4 * S then return { ok = false } end
+	coinTakenAt[id] = os.clock()
+	coin.Transparency = 1
+	coinTaken:FireAllClients(id, true)
+	profiles[player].coins = profiles[player].coins + Config.CITY_COIN_VALUE
+	changed(player)
+	task.delay(Config.COIN_RESPAWN_SECONDS, function()
+		coinTakenAt[id] = nil
+		coin.Transparency = 0
+		coinTaken:FireAllClients(id, false)
+	end)
+	return { ok = true }
+end
+
+-- ---------- Garaje y taller ----------
+local function validPart(cat, id)
+	local t = GameData.TUNING[cat]
+	if not t then return nil end
+	for _, o in ipairs(t.options) do
+		if o.id == id then return o end
+	end
+	return nil
+end
+
+-- Piezas disponibles en la versión de Roblox (alerones y body kits: próximamente).
+local ROBLOX_PARTS = { rims = true, height = true, neon = true }
+
+local actions = {}
+
+function actions.profile(player)
+	return publicProfile(player)
+end
+
+function actions.play(player, args)
+	if args.mode == "city" then return startCity(player) end
+	return startLevel(player, tonumber(args.index) or 1)
+end
+
+function actions.levelDone(player, args)
+	return levelDone(player, tonumber(args.index))
+end
+
+function actions.levelFail(player, args)
+	local st = states[player]
+	if st and st.mode == "level" and not profiles[player].god then st.over = true end
+	return { ok = true }
+end
+
+function actions.exit(player)
+	despawn(player)
+	return { ok = true }
+end
+
+function actions.buy(player, args)
+	local p = profiles[player]
+	local car = GameData.CARS[args.car]
+	if not car then return { ok = false } end
+	if contains(p.owned, args.car) then return { ok = true } end
+	if p.coins < car.price then return { ok = false, error = "Te faltan " .. (car.price - p.coins) .. " monedas" } end
+	p.coins = p.coins - car.price
+	table.insert(p.owned, args.car)
+	p.car = args.car
+	changed(player)
+	return { ok = true }
+end
+
+function actions.select(player, args)
+	local p = profiles[player]
+	if not contains(p.owned, args.car) then return { ok = false } end
+	p.car = args.car
+	changed(player)
+	return { ok = true }
+end
+
+function actions.color(player, args)
+	if not contains(GameData.COLORS, args.color) then return { ok = false } end
+	profiles[player].color = args.color
+	changed(player)
+	return { ok = true }
+end
+
+function actions.part(player, args)
+	local p = profiles[player]
+	local o = validPart(args.cat, args.id)
+	if not o or not ROBLOX_PARTS[args.cat] or not contains(p.owned, args.car) then return { ok = false } end
+	local tag = args.car .. ":" .. args.cat .. ":" .. args.id
+	if o.price > 0 and not contains(p.parts, tag) then
+		if p.coins < o.price then return { ok = false, error = "Te faltan " .. (o.price - p.coins) .. " monedas" } end
+		p.coins = p.coins - o.price
+		table.insert(p.parts, tag)
+	end
+	p.tuning[args.car] = p.tuning[args.car] or {}
+	p.tuning[args.car][args.cat] = args.id
+	changed(player)
+	return { ok = true }
+end
+
+function actions.admin(player, args)
+	if not isAdmin(player) then return { ok = false, error = "No eres administrador" } end
+	local p = profiles[player]
+	local a = args.action
+	if a == "coins" then
+		p.coins = math.min(p.coins + math.clamp(tonumber(args.amount) or 0, 0, 1000000), 999999999)
+	elseif a == "million" then
+		p.coins = 1000000
+	elseif a == "cars" then
+		p.owned = {}
+		for _, k in ipairs(GameData.CAR_ORDER) do table.insert(p.owned, k) end
+	elseif a == "parts" then
+		p.parts = {}
+		for _, k in ipairs(GameData.CAR_ORDER) do
+			for cat in pairs(ROBLOX_PARTS) do
+				for _, o in ipairs(GameData.TUNING[cat].options) do table.insert(p.parts, k .. ":" .. cat .. ":" .. o.id) end
+			end
+		end
+	elseif a == "levels" then
+		for i = 1, #GameData.LEVELS do p.stars[tostring(i)] = 3 end
+	elseif a == "god" then
+		p.god = not p.god
+	elseif a == "reset" then
+		local fresh = defaultProfile()
+		for k, v in pairs(fresh) do p[k] = v end
+	else
+		return { ok = false }
+	end
+	changed(player)
+	return { ok = true }
+end
+
+-- Límite de peticiones por jugador para evitar abusos.
+local lastRequest = {}
+request.OnServerInvoke = function(player, action, args)
+	if not profiles[player] then return { ok = false, error = "Cargando partida..." } end
+	local now = os.clock()
+	if lastRequest[player] and now - lastRequest[player] < 0.08 and action ~= "profile" then return { ok = false } end
+	lastRequest[player] = now
+	local fn = actions[action]
+	if type(fn) ~= "function" then return { ok = false } end
+	local ok, result = pcall(fn, player, type(args) == "table" and args or {})
+	if not ok then
+		warn("Error en la acción " .. tostring(action) .. ": " .. tostring(result))
+		return { ok = false, error = "Error del servidor" }
+	end
+	return result
+end
+
+-- ---------- Entrada y salida de jugadores ----------
+local function onPlayerAdded(player)
+	local ls = Instance.new("Folder")
+	ls.Name = "leaderstats"
+	local coins = Instance.new("IntValue")
+	coins.Name = "Monedas"
+	coins.Parent = ls
+	ls.Parent = player
+	profiles[player] = load(player)
+	changed(player)
+	player.CharacterAdded:Connect(function(character)
+		local hum = character:WaitForChild("Humanoid")
+		hum.Died:Connect(function() despawn(player) end)
+	end)
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+for _, player in ipairs(Players:GetPlayers()) do task.spawn(onPlayerAdded, player) end
+
+Players.PlayerRemoving:Connect(function(player)
+	despawn(player)
+	save(player)
+	profiles[player] = nil
+	lastRequest[player] = nil
+end)
+
+-- Guardado automático cada minuto y al cerrar el servidor.
+task.spawn(function()
+	while true do
+		task.wait(60)
+		for player in pairs(profiles) do save(player) end
+	end
+end)
+game:BindToClose(function()
+	for player in pairs(profiles) do save(player) end
+end)
+]]></ProtectedString></Properties></Item></Item><Item class="StarterPlayer" referent="RBX0000000C"><Properties><string name="Name">StarterPlayer</string></Properties><Item class="StarterPlayerScripts" referent="RBX0000000B"><Properties><string name="Name">StarterPlayerScripts</string></Properties><Item class="LocalScript" referent="RBX0000000A"><Properties><string name="Name">ParkingClient</string><ProtectedString name="Source"><![CDATA[-- Cliente de Parking Pro 3D: interfaz, controles, conducción, cámara y sonido.
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local Shared = ReplicatedStorage:WaitForChild("ParkingShared")
+local Config = require(Shared:WaitForChild("Config"))
+local GameData = require(Shared:WaitForChild("GameData"))
+local Physics = require(Shared:WaitForChild("Physics"))
+local CarBuilder = require(Shared:WaitForChild("CarBuilder"))
+local remotes = ReplicatedStorage:WaitForChild("ParkingRemotes")
+local request = remotes:WaitForChild("Request")
+
+local S = Config.SCALE
+local clamp = Physics.clamp
+local profile = nil
+
+-- ===================== Interfaz =====================
+local T = {
+	bg = Color3.fromRGB(18, 21, 28), panel = Color3.fromRGB(28, 33, 43), button = Color3.fromRGB(48, 56, 70),
+	accent = Color3.fromRGB(255, 180, 0), text = Color3.fromRGB(244, 246, 251), muted = Color3.fromRGB(165, 173, 189),
+	ok = Color3.fromRGB(34, 197, 94), bad = Color3.fromRGB(239, 68, 68), dark = Color3.fromRGB(26, 19, 0),
+}
+
+local function make(class, props, children)
+	local inst = Instance.new(class)
+	for k, v in pairs(props or {}) do
+		if k ~= "Parent" then inst[k] = v end
+	end
+	for _, c in ipairs(children or {}) do c.Parent = inst end
+	if props and props.Parent then inst.Parent = props.Parent end
+	return inst
+end
+
+local function round(inst, r)
+	make("UICorner", { CornerRadius = UDim.new(0, r or 12), Parent = inst })
+	return inst
+end
+
+local function label(props)
+	props.BackgroundTransparency = props.BackgroundTransparency or 1
+	props.Font = props.Font or Enum.Font.GothamBold
+	props.TextColor3 = props.TextColor3 or T.text
+	props.TextSize = props.TextSize or 18
+	return make("TextLabel", props)
+end
+
+local function button(text, props)
+	props = props or {}
+	props.Text = text
+	props.Font = props.Font or Enum.Font.GothamBlack
+	props.TextSize = props.TextSize or 18
+	props.TextColor3 = props.TextColor3 or T.text
+	props.BackgroundColor3 = props.BackgroundColor3 or T.button
+	props.AutoButtonColor = true
+	local b = make("TextButton", props)
+	round(b, 12)
+	make("UIStroke", { Color = Color3.new(1, 1, 1), Transparency = 0.85, Thickness = 2, ApplyStrokeMode = Enum.ApplyStrokeMode.Border, Parent = b })
+	return b
+end
+
+local function panel(props)
+	props.BackgroundColor3 = props.BackgroundColor3 or T.panel
+	props.BackgroundTransparency = props.BackgroundTransparency or 0.08
+	local f = make("Frame", props)
+	round(f, 18)
+	return f
+end
+
+local gui = make("ScreenGui", { Name = "ParkingUI", ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = player:WaitForChild("PlayerGui") })
+
+local toastLabel = label({ Size = UDim2.fromOffset(420, 44), Position = UDim2.new(0.5, -210, 0.3, 0), BackgroundTransparency = 0.15, BackgroundColor3 = T.panel, TextSize = 20, Visible = false, ZIndex = 50, Parent = gui })
+round(toastLabel, 12)
+local toastToken = 0
+local function toast(msg)
+	toastToken = toastToken + 1
+	local mine = toastToken
+	toastLabel.Text = msg
+	toastLabel.Visible = true
+	task.delay(1.8, function()
+		if toastToken == mine then toastLabel.Visible = false end
+	end)
+end
+
+local function call(action, args)
+	local ok, res = pcall(function() return request:InvokeServer(action, args or {}) end)
+	if not ok or type(res) ~= "table" then return { ok = false, error = "Sin conexión con el servidor" } end
+	if res.ok == false and res.error then toast(res.error) end
+	return res
+end
+
+local function formatCoins(n)
+	local s = tostring(math.floor(n or 0))
+	local out = ""
+	while #s > 3 do
+		out = "." .. string.sub(s, -3) .. out
+		s = string.sub(s, 1, -4)
+	end
+	return "🪙 " .. s .. out
+end
+
+local screens = {}
+local function show(name)
+	for k, f in pairs(screens) do f.Visible = (k == name) end
+end
+
+-- ---------- Menú principal ----------
+local menu = panel({ Name = "Menu", Size = UDim2.fromOffset(560, 250), Position = UDim2.new(0.5, -280, 1, -270), Parent = gui })
+screens.menu = menu
+label({ Text = "PARKING PRO 3D", Size = UDim2.new(1, 0, 0, 60), Position = UDim2.fromOffset(0, 10), Font = Enum.Font.GothamBlack, TextSize = 46, TextColor3 = T.accent, Parent = menu })
+label({ Text = "Aparca sin chocar. ¿Eres el mejor conductor?", Size = UDim2.new(1, 0, 0, 24), Position = UDim2.fromOffset(0, 68), TextColor3 = T.muted, TextSize = 16, Font = Enum.Font.Gotham, Parent = menu })
+local menuCoins = label({ Text = "", Size = UDim2.new(1, 0, 0, 26), Position = UDim2.fromOffset(0, 96), TextSize = 20, Parent = menu })
+local menuRow = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, -40, 0, 110), Position = UDim2.fromOffset(20, 130), Parent = menu })
+make("UIGridLayout", { CellSize = UDim2.new(0.5, -6, 0, 48), CellPadding = UDim2.fromOffset(12, 10), SortOrder = Enum.SortOrder.LayoutOrder, Parent = menuRow })
+local btnLevels = button("▶ Niveles", { LayoutOrder = 1, BackgroundColor3 = T.accent, TextColor3 = T.dark, Parent = menuRow })
+local btnCity = button("🏙️ Ciudad libre", { LayoutOrder = 2, Parent = menuRow })
+local btnGarage = button("🚗 Garaje", { LayoutOrder = 3, Parent = menuRow })
+local btnAdmin = button("🛠️ Admin", { LayoutOrder = 4, Visible = false, Parent = menuRow })
+
+-- ---------- Niveles ----------
+local levelsScreen = panel({ Name = "Levels", Size = UDim2.new(0, 760, 0, 420), Position = UDim2.new(0.5, -380, 0.5, -210), Visible = false, Parent = gui })
+screens.levels = levelsScreen
+label({ Text = "Niveles", Size = UDim2.new(1, 0, 0, 50), TextSize = 30, Font = Enum.Font.GothamBlack, Parent = levelsScreen })
+local levelsBack = button("← Volver", { Size = UDim2.fromOffset(120, 40), Position = UDim2.fromOffset(14, 8), TextSize = 16, Parent = levelsScreen })
+local levelGrid = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, -28, 1, -70), Position = UDim2.fromOffset(14, 60), Parent = levelsScreen })
+make("UIGridLayout", { CellSize = UDim2.new(0.2, -10, 0.5, -10), CellPadding = UDim2.fromOffset(12, 12), SortOrder = Enum.SortOrder.LayoutOrder, Parent = levelGrid })
+
+-- ---------- Garaje ----------
+local garage = make("Frame", { Name = "Garage", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = gui })
+screens.garage = garage
+local viewport = make("ViewportFrame", { Size = UDim2.new(0.55, 0, 0.8, 0), Position = UDim2.new(0.02, 0, 0.1, 0), BackgroundColor3 = T.bg, BackgroundTransparency = 0.1, Ambient = Color3.fromRGB(150, 150, 160), LightColor = Color3.fromRGB(255, 255, 255), LightDirection = Vector3.new(-1, -2, -1), Parent = garage })
+round(viewport, 18)
+local vpCamera = make("Camera", { FieldOfView = 40, Parent = viewport })
+viewport.CurrentCamera = vpCamera
+local gPanel = panel({ Size = UDim2.new(0.38, 0, 0.8, 0), Position = UDim2.new(0.6, 0, 0.1, 0), Parent = garage })
+local gBack = button("← Volver", { Size = UDim2.fromOffset(110, 36), Position = UDim2.fromOffset(12, 10), TextSize = 15, Parent = gPanel })
+local gCoins = label({ Text = "", Size = UDim2.fromOffset(160, 36), Position = UDim2.new(1, -172, 0, 10), TextXAlignment = Enum.TextXAlignment.Right, Parent = gPanel })
+local gPrev = button("‹", { Size = UDim2.fromOffset(44, 44), Position = UDim2.fromOffset(12, 56), TextSize = 30, Parent = gPanel })
+local gNext = button("›", { Size = UDim2.fromOffset(44, 44), Position = UDim2.new(1, -56, 0, 56), TextSize = 30, Parent = gPanel })
+local gName = label({ Text = "", Size = UDim2.new(1, -130, 0, 34), Position = UDim2.fromOffset(65, 54), TextSize = 26, Font = Enum.Font.GothamBlack, Parent = gPanel })
+local gSub = label({ Text = "", Size = UDim2.new(1, -130, 0, 20), Position = UDim2.fromOffset(65, 86), TextSize = 13, TextColor3 = T.accent, TextWrapped = true, Parent = gPanel })
+local gAction = button("", { Size = UDim2.new(1, -24, 0, 46), Position = UDim2.fromOffset(12, 114), BackgroundColor3 = T.accent, TextColor3 = T.dark, Parent = gPanel })
+label({ Text = "Color", Size = UDim2.new(1, -24, 0, 20), Position = UDim2.fromOffset(12, 168), TextSize = 14, TextColor3 = T.muted, TextXAlignment = Enum.TextXAlignment.Left, Parent = gPanel })
+local colorRow = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, -24, 0, 70), Position = UDim2.fromOffset(12, 190), Parent = gPanel })
+make("UIGridLayout", { CellSize = UDim2.fromOffset(30, 30), CellPadding = UDim2.fromOffset(8, 8), Parent = colorRow })
+label({ Text = "Taller", Size = UDim2.new(1, -24, 0, 20), Position = UDim2.fromOffset(12, 266), TextSize = 14, TextColor3 = T.muted, TextXAlignment = Enum.TextXAlignment.Left, Parent = gPanel })
+local tabRow = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, -24, 0, 32), Position = UDim2.fromOffset(12, 288), Parent = gPanel })
+make("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), Parent = tabRow })
+local optGrid = make("ScrollingFrame", { BackgroundTransparency = 1, Size = UDim2.new(1, -24, 1, -332), Position = UDim2.fromOffset(12, 326), ScrollBarThickness = 4, AutomaticCanvasSize = Enum.AutomaticSize.Y, CanvasSize = UDim2.new(), Parent = gPanel })
+make("UIGridLayout", { CellSize = UDim2.new(0.5, -5, 0, 44), CellPadding = UDim2.fromOffset(10, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = optGrid })
+
+-- ---------- Marcador (HUD) ----------
+local hud = make("Frame", { Name = "HUD", BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1), Visible = false, Parent = gui })
+screens.hud = hud
+local hudInfo = panel({ Size = UDim2.fromOffset(240, 64), Position = UDim2.fromOffset(12, 12), Parent = hud })
+local hudTitle = label({ Text = "", Size = UDim2.new(1, -20, 0, 24), Position = UDim2.fromOffset(10, 6), TextSize = 15, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = hudInfo })
+local hudTimer = label({ Text = "", Size = UDim2.new(1, -20, 0, 30), Position = UDim2.fromOffset(10, 28), TextSize = 24, Font = Enum.Font.GothamBlack, TextColor3 = T.accent, TextXAlignment = Enum.TextXAlignment.Left, Parent = hudInfo })
+local hudHint = label({ Text = "", Size = UDim2.fromOffset(420, 34), Position = UDim2.new(0.5, -210, 0, 14), BackgroundTransparency = 0.15, BackgroundColor3 = T.panel, TextSize = 15, TextWrapped = true, Parent = hud })
+round(hudHint, 12)
+local btnCam = button("🎥", { Size = UDim2.fromOffset(48, 48), Position = UDim2.new(1, -170, 0, 12), Parent = hud })
+local btnExit = button("Salir", { Size = UDim2.fromOffset(100, 48), Position = UDim2.new(1, -112, 0, 12), TextSize = 16, Parent = hud })
+local parkBar = make("Frame", { Size = UDim2.fromOffset(200, 12), Position = UDim2.new(0.5, -100, 0, 56), BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.4, Visible = false, Parent = hud })
+round(parkBar, 6)
+local parkFill = make("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = T.ok, Parent = parkBar })
+round(parkFill, 6)
+local speedo = panel({ Size = UDim2.fromOffset(130, 64), Position = UDim2.new(0.5, -65, 1, -78), Parent = hud })
+local speedLabel = label({ Text = "0", Size = UDim2.new(1, 0, 0, 36), Position = UDim2.fromOffset(0, 4), TextSize = 32, Font = Enum.Font.GothamBlack, Parent = speedo })
+local gearLabel = label({ Text = "km/h · D1", Size = UDim2.new(1, 0, 0, 18), Position = UDim2.fromOffset(0, 40), TextSize = 13, TextColor3 = T.muted, Parent = speedo })
+
+-- Controles táctiles
+local touch = { left = false, right = false, gas = false, brake = false, hand = false }
+local gear = 1
+local gearButton
+local function setGear(g)
+	gear = g
+	if gearButton then
+		gearButton.Text = g == 1 and "D" or "R"
+		gearButton.BackgroundColor3 = g == 1 and T.button or T.bad
+	end
+end
+local function holdButton(b, key)
+	b.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			touch[key] = true
+			b.BackgroundTransparency = 0.1
+		end
+	end)
+	b.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+			touch[key] = false
+			b.BackgroundTransparency = 0.35
+		end
+	end)
+end
+if UserInputService.TouchEnabled then
+	local pedal = function(text, size, pos, key)
+		local b = button(text, { Size = size, Position = pos, BackgroundTransparency = 0.35, TextSize = 22, Parent = hud })
+		holdButton(b, key)
+		return b
+	end
+	pedal("◀", UDim2.fromOffset(90, 90), UDim2.new(0, 16, 1, -106), "left")
+	pedal("▶", UDim2.fromOffset(90, 90), UDim2.new(0, 116, 1, -106), "right")
+	pedal("GAS", UDim2.fromOffset(80, 140), UDim2.new(1, -96, 1, -156), "gas")
+	pedal("FRENO", UDim2.fromOffset(96, 96), UDim2.new(1, -204, 1, -112), "brake")
+	pedal("P", UDim2.fromOffset(60, 60), UDim2.new(1, -274, 1, -76), "hand")
+	gearButton = button("D", { Size = UDim2.fromOffset(60, 60), Position = UDim2.new(1, -274, 1, -146), TextSize = 26, Parent = hud })
+	gearButton.Activated:Connect(function() setGear(gear == 1 and -1 or 1) end)
+end
+
+-- ---------- Ventana de resultado ----------
+local modal = make("Frame", { BackgroundColor3 = Color3.new(0, 0, 0), BackgroundTransparency = 0.45, Size = UDim2.fromScale(1, 1), Visible = false, ZIndex = 20, Parent = gui })
+local card = panel({ Size = UDim2.fromOffset(420, 260), Position = UDim2.new(0.5, -210, 0.5, -130), ZIndex = 21, Parent = modal })
+local mTitle = label({ Text = "", Size = UDim2.new(1, 0, 0, 44), Position = UDim2.fromOffset(0, 14), TextSize = 32, Font = Enum.Font.GothamBlack, ZIndex = 22, Parent = card })
+local mStars = label({ Text = "", Size = UDim2.new(1, 0, 0, 44), Position = UDim2.fromOffset(0, 58), TextSize = 40, TextColor3 = T.accent, ZIndex = 22, Parent = card })
+local mText = label({ Text = "", Size = UDim2.new(1, -30, 0, 50), Position = UDim2.fromOffset(15, 104), TextSize = 17, TextColor3 = T.muted, TextWrapped = true, Font = Enum.Font.Gotham, ZIndex = 22, Parent = card })
+local mButtons = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, -30, 0, 50), Position = UDim2.new(0, 15, 1, -68), ZIndex = 22, Parent = card })
+make("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 10), Parent = mButtons })
+
+local function showModal(title, text, stars, buttons)
+	mTitle.Text = title
+	mText.Text = text
+	mStars.Text = stars and (string.rep("★", stars) .. string.rep("☆", 3 - stars)) or ""
+	for _, c in ipairs(mButtons:GetChildren()) do
+		if c:IsA("GuiButton") then c:Destroy() end
+	end
+	for i, b in ipairs(buttons) do
+		local btn = button(b[1], { Size = UDim2.fromOffset(120, 46), LayoutOrder = i, ZIndex = 23, BackgroundColor3 = b[3] and T.accent or T.button, TextColor3 = b[3] and T.dark or T.text, TextSize = 16, Parent = mButtons })
+		btn.Activated:Connect(function()
+			modal.Visible = false
+			b[2]()
+		end)
+	end
+	modal.Visible = true
+end
+
+-- ---------- Panel de admin ----------
+local admin = panel({ Size = UDim2.fromOffset(520, 330), Position = UDim2.new(0.5, -260, 0.5, -165), Visible = false, ZIndex = 30, Parent = gui })
+label({ Text = "Panel de admin", Size = UDim2.new(1, 0, 0, 44), Position = UDim2.fromOffset(0, 8), TextSize = 28, Font = Enum.Font.GothamBlack, TextColor3 = T.accent, ZIndex = 31, Parent = admin })
+local adminStatus = label({ Text = "", Size = UDim2.new(1, 0, 0, 22), Position = UDim2.fromOffset(0, 50), TextSize = 15, TextColor3 = T.muted, ZIndex = 31, Parent = admin })
+local adminGrid = make("Frame", { BackgroundTransparency = 1, Size = UDim2.new(1, -30, 0, 190), Position = UDim2.fromOffset(15, 80), ZIndex = 31, Parent = admin })
+make("UIGridLayout", { CellSize = UDim2.new(0.5, -6, 0, 40), CellPadding = UDim2.fromOffset(12, 8), SortOrder = Enum.SortOrder.LayoutOrder, Parent = adminGrid })
+local adminClose = button("Cerrar", { Size = UDim2.fromOffset(140, 40), Position = UDim2.new(0.5, -70, 1, -52), BackgroundColor3 = T.accent, TextColor3 = T.dark, ZIndex = 31, Parent = admin })
+
+-- ===================== Estado y pantallas =====================
+local drive = nil
+local garageIndex = 1
+local tuneCat = "rims"
+local ROBLOX_TUNING = { "rims", "height", "neon" }
+
+local function contains(list, v)
+	for _, x in ipairs(list or {}) do
+		if x == v then return true end
+	end
+	return false
+end
+
+local function starsOf(i)
+	return (profile and profile.stars[tostring(i)]) or 0
+end
+
+local function refreshCoins()
+	if not profile then return end
+	menuCoins.Text = formatCoins(profile.coins)
+	gCoins.Text = formatCoins(profile.coins)
+	btnAdmin.Visible = profile.admin == true
+end
+
+local startPlay -- se define más abajo
+
+local function openLevels()
+	for _, c in ipairs(levelGrid:GetChildren()) do
+		if c:IsA("GuiButton") then c:Destroy() end
+	end
+	for i, lv in ipairs(GameData.LEVELS) do
+		local unlocked = i == 1 or starsOf(i - 1) > 0 or (profile and profile.admin)
+		local st = starsOf(i)
+		local b = button((unlocked and tostring(i) or "🔒") .. "\n" .. lv.name .. "\n" .. string.rep("★", st) .. string.rep("☆", 3 - st), {
+			LayoutOrder = i, TextSize = 15, TextWrapped = true, BackgroundTransparency = unlocked and 0 or 0.5, Parent = levelGrid,
+		})
+		b.Activated:Connect(function()
+			if not unlocked then toast("Completa el nivel anterior") return end
+			startPlay({ mode = "level", index = i })
+		end)
+	end
+	show("levels")
+end
+
+-- Vista previa del coche en el garaje
+local previewModel
+local function refreshPreview()
+	if previewModel then previewModel:Destroy() end
+	local key = GameData.CAR_ORDER[garageIndex]
+	local tune = (profile and profile.tuning[key]) or {}
+	previewModel = CarBuilder.build(key, { parked = true, color = CarBuilder.hexToColor(profile and profile.color), rims = tune.rims })
+	previewModel.Parent = viewport
+end
+
+local function renderGarage()
+	if not profile then return end
+	local key = GameData.CAR_ORDER[garageIndex]
+	local spec = GameData.CARS[key]
+	gName.Text = spec.name
+	gSub.Text = spec.hp .. " CV · 0-100 en " .. string.gsub(tostring(spec.zero100), "%.", ",") .. " s · " .. spec.price .. " monedas"
+	local owned = contains(profile.owned, key)
+	if profile.car == key then
+		gAction.Text = "✓ En uso"
+	elseif owned then
+		gAction.Text = "Usar este coche"
+	else
+		gAction.Text = "Comprar · " .. spec.price .. " monedas"
+	end
+	for _, c in ipairs(colorRow:GetChildren()) do
+		if c:IsA("GuiButton") then c:Destroy() end
+	end
+	for i, hex in ipairs(GameData.COLORS) do
+		local sw = make("TextButton", { Text = "", LayoutOrder = i, BackgroundColor3 = CarBuilder.hexToColor(hex), Parent = colorRow })
+		round(sw, 15)
+		make("UIStroke", { Color = hex == profile.color and Color3.new(1, 1, 1) or Color3.fromRGB(80, 80, 80), Thickness = hex == profile.color and 3 or 1, Parent = sw })
+		sw.Activated:Connect(function() call("color", { color = hex }) end)
+	end
+	-- Taller (solo para coches comprados)
+	for _, c in ipairs(tabRow:GetChildren()) do
+		if c:IsA("GuiButton") then c:Destroy() end
+	end
+	for _, c in ipairs(optGrid:GetChildren()) do
+		if c:IsA("GuiButton") or c:IsA("TextLabel") then c:Destroy() end
+	end
+	if not owned then
+		label({ Text = "Compra el coche para tunearlo", Size = UDim2.fromOffset(200, 30), TextColor3 = T.muted, TextSize = 14, Parent = optGrid })
+	else
+		for _, cat in ipairs(ROBLOX_TUNING) do
+			local tb = button(GameData.TUNING[cat].label, { Size = UDim2.fromOffset(110, 30), TextSize = 13, BackgroundColor3 = cat == tuneCat and T.accent or T.button, TextColor3 = cat == tuneCat and T.dark or T.text, Parent = tabRow })
+			tb.Activated:Connect(function()
+				tuneCat = cat
+				renderGarage()
+			end)
+		end
+		local current = (profile.tuning[key] or {})[tuneCat] or "stock"
+		for i, o in ipairs(GameData.TUNING[tuneCat].options) do
+			local has = o.price == 0 or contains(profile.parts, key .. ":" .. tuneCat .. ":" .. o.id)
+			local status = (current == o.id) and "Montado" or (has and "Comprado" or (o.price .. " monedas"))
+			local ob = button(o.name .. "\n" .. status, { LayoutOrder = i, TextSize = 13, BackgroundColor3 = current == o.id and Color3.fromRGB(70, 60, 20) or T.button, Parent = optGrid })
+			ob.Activated:Connect(function() call("part", { car = key, cat = tuneCat, id = o.id }) end)
+		end
+	end
+	refreshCoins()
+	refreshPreview()
+end
+
+local function openGarage()
+	if profile then
+		for i, k in ipairs(GameData.CAR_ORDER) do
+			if k == profile.car then garageIndex = i end
+		end
+	end
+	renderGarage()
+	show("garage")
+end
+
+local function renderAdmin()
+	if not profile then return end
+	adminStatus.Text = formatCoins(profile.coins) .. " · " .. #profile.owned .. "/" .. #GameData.CAR_ORDER .. " coches · sin choques: " .. (profile.god and "SÍ" or "NO")
+end
+
+local adminActions = {
+	{ "+10.000 monedas", { action = "coins", amount = 10000 } },
+	{ "+100.000 monedas", { action = "coins", amount = 100000 } },
+	{ "Poner 1.000.000", { action = "million" } },
+	{ "Dar todos los coches", { action = "cars" } },
+	{ "Dar todas las piezas", { action = "parts" } },
+	{ "Niveles con 3 ★", { action = "levels" } },
+	{ "Sin choques (sí/no)", { action = "god" } },
+	{ "Reiniciar partida", { action = "reset" } },
+}
+local resetArmed = false
+for i, a in ipairs(adminActions) do
+	local b = button(a[1], { LayoutOrder = i, TextSize = 15, ZIndex = 32, BackgroundColor3 = a[2].action == "reset" and T.bad or T.button, Parent = adminGrid })
+	b.Activated:Connect(function()
+		if a[2].action == "reset" and not resetArmed then
+			resetArmed = true
+			b.Text = "¿Seguro? Toca otra vez"
+			task.delay(3, function()
+				resetArmed = false
+				b.Text = a[1]
+			end)
+			return
+		end
+		local res = call("admin", a[2])
+		if res.ok then toast("Hecho: " .. a[1]) end
+	end)
+end
+adminClose.Activated:Connect(function() admin.Visible = false end)
+
+-- ===================== Conducción =====================
+local playerModule
+local function setDefaultControls(enabled)
+	if not playerModule then
+		local ok, pm = pcall(function() return require(player:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule")) end)
+		if ok then playerModule = pm end
+	end
+	if playerModule then
+		local controls = playerModule:GetControls()
+		if enabled then controls:Enable() else controls:Disable() end
+	end
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if hum then hum:SetStateEnabled(Enum.HumanoidStateType.Jumping, enabled) end
+end
+
+local camera = workspace.CurrentCamera
+local camMode = 0
+local CAM_NAMES = { [0] = "Cámara: detrás", "Cámara: alta", "Cámara: cenital", "Cámara: capó" }
+
+local function stopDriving(goTo)
+	if drive then
+		if drive.sound then drive.sound:Destroy() end
+		drive = nil
+	end
+	camera.CameraType = Enum.CameraType.Custom
+	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	if hum then camera.CameraSubject = hum end
+	setDefaultControls(true)
+	call("exit")
+	if goTo == "levels" then openLevels() else show("menu") end
+end
+
+startPlay = function(args)
+	modal.Visible = false
+	local res = call("play", args)
+	if not res.ok then return end
+	local car = workspace:WaitForChild("PlayerCars"):WaitForChild(res.carName, 10)
+	if not car then toast("No se pudo cargar el coche") return end
+	local chassis = car:WaitForChild("Chassis")
+	local key = car:GetAttribute("CarKey")
+	local spec = GameData.CARS[key]
+	local d = {
+		args = args, res = res, car = car, chassis = chassis, hitbox = car:WaitForChild("Hitbox"), key = key, spec = spec,
+		c = { v = 0, vl = 0, steer = 0, gear = 1, yaw = 0, slip = 0 },
+		dt = { gear = 1, rpm = spec.engine.idle }, steerIn = 0, thr = 0, brk = 0,
+		time = 0, inSpot = 0, over = false, spin = {}, motors = {}, heading = 0, camYaw = 0,
+	}
+	for _, pos in ipairs(CarBuilder.WHEELS) do
+		d.motors[pos] = { steer = car:FindFirstChild("Steer_" .. pos, true), spin = car:FindFirstChild("Spin_" .. pos, true) }
+		d.spin[pos] = 0
+	end
+	d.tail, d.rev = {}, {}
+	for _, p in ipairs(car:GetDescendants()) do
+		local piece = p:IsA("BasePart") and p:GetAttribute("Piece")
+		if piece == "Taillights" then table.insert(d.tail, p) end
+		if piece == "ReverseLights" then table.insert(d.rev, p) end
+	end
+	local soundId = Config.SOUND_IDS[spec.engine.voice] or 0
+	if soundId ~= 0 then
+		d.sound = make("Sound", { SoundId = "rbxassetid://" .. soundId, Looped = true, Volume = 0.5, Parent = chassis })
+		d.sound:Play()
+	end
+	if res.mode == "level" then
+		local levelFolder = workspace:WaitForChild("PlayerLevels"):WaitForChild(res.levelName, 10)
+		d.obstacles = levelFolder and levelFolder:WaitForChild("Obstacles")
+		d.targetPart = levelFolder and levelFolder:FindFirstChild("Target")
+		d.overlap = OverlapParams.new()
+		d.overlap.FilterType = Enum.RaycastFilterType.Include
+		d.overlap.FilterDescendantsInstances = { d.obstacles }
+		hudTitle.Text = "Nivel " .. res.index .. " · " .. res.name
+		hudHint.Text = (res.god and "Sin choques · " or "") .. res.hint
+	else
+		hudTitle.Text = "Ciudad libre"
+		hudHint.Text = res.hint
+	end
+	d.heading = math.atan2(chassis.CFrame.LookVector.X, chassis.CFrame.LookVector.Z)
+	setGear(1)
+	setDefaultControls(false)
+	camera.CameraType = Enum.CameraType.Scriptable
+	drive = d
+	show("hud")
+end
+
+local function failLevel(hit)
+	local d = drive
+	d.over = true
+	call("levelFail", { index = d.res.index })
+	local what = "Has golpeado un muro."
+	local name = hit and hit.Name or ""
+	if name == "Cone" then what = "Has derribado un cono."
+	elseif name == "Pillar" then what = "Has golpeado una columna."
+	elseif name == "Chassis" then what = "Has golpeado un coche aparcado." end
+	showModal("¡Has chocado!", what, nil, {
+		{ "Reintentar", function() startPlay(d.args) end, true },
+		{ "Niveles", function() stopDriving("levels") end },
+	})
+end
+
+local function completeLevel()
+	local d = drive
+	d.over = true
+	local res = call("levelDone", { index = d.res.index })
+	if not res.ok then
+		d.over = false
+		d.inSpot = 0
+		return
+	end
+	local buttons = {}
+	if res.hasNext then table.insert(buttons, { "Siguiente ▶", function() startPlay({ mode = "level", index = d.res.index + 1 }) end, true }) end
+	table.insert(buttons, { "Repetir", function() startPlay(d.args) end })
+	table.insert(buttons, { "Niveles", function() stopDriving("levels") end })
+	showModal("¡Aparcado!", string.format("Tiempo: %.1f s  ·  +%d monedas", res.time, res.reward), res.stars, buttons)
+end
+
+-- Lectura de mandos: teclado (marcha automática) o botones táctiles. Pedales progresivos.
+local function key(k) return UserInputService:IsKeyDown(k) end
+local function readInput(d, dt)
+	local typing = UserInputService:GetFocusedTextBox() ~= nil
+	local up = not typing and (key(Enum.KeyCode.W) or key(Enum.KeyCode.Up))
+	local down = not typing and (key(Enum.KeyCode.S) or key(Enum.KeyCode.Down))
+	local left = touch.left or (not typing and (key(Enum.KeyCode.A) or key(Enum.KeyCode.Left)))
+	local right = touch.right or (not typing and (key(Enum.KeyCode.D) or key(Enum.KeyCode.Right)))
+	local v = d.c.v
+	local sp = math.abs(v)
+	local kb = (left and 1 or 0) - (right and 1 or 0)
+	local reach = 1 / (1 + sp / 9)
+	local rate = (kb ~= 0 and 1.75 / (1 + sp / 12) or 1.6) * dt
+	d.steerIn = d.steerIn + clamp(kb * reach - d.steerIn, -rate, rate)
+
+	local gas, brk = touch.gas, touch.brake
+	if up then
+		if gear == 1 then gas = true elseif v < -0.3 then brk = true else setGear(1) gas = true end
+	end
+	if down then
+		if gear == -1 then gas = true elseif v > 0.3 then brk = true else setGear(-1) gas = true end
+	end
+	d.thr = gas and math.min(1, d.thr + 2.6 * dt) or math.max(0, d.thr - 6 * dt)
+	d.brk = brk and math.min(1, d.brk + 4 * dt) or 0
+	return { throttle = d.thr, brake = d.brk, steer = d.steerIn, handbrake = touch.hand or (not typing and key(Enum.KeyCode.Space)) }
+end
+
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed or not drive then return end
+	if input.KeyCode == Enum.KeyCode.C then
+		camMode = (camMode + 1) % 4
+		toast(CAM_NAMES[camMode])
+	end
+end)
+
+local cityCoins = {}
+local coinPending = {}
+RunService.Heartbeat:Connect(function(dt)
+	local d = drive
+	if not d then return end
+	local chassis = d.chassis
+	if not chassis.Parent then
+		drive = nil
+		task.spawn(stopDriving)
+		return
+	end
+	local cf = chassis.CFrame
+	local look = Vector3.new(cf.LookVector.X, 0, cf.LookVector.Z).Unit
+	-- Izquierda del coche (= -RightVector): la física usa + = izquierda, como el giro positivo en Y.
+	local left = Vector3.new(look.Z, 0, -look.X)
+	local vel = chassis.AssemblyLinearVelocity
+	d.c.v = vel:Dot(look) / S
+	d.c.vl = vel:Dot(left) / S
+	local inp = readInput(d, dt)
+	d.c.gear = gear
+	if d.over then
+		inp.throttle = 0
+		inp.handbrake = true
+	end
+	Physics.step(d.c, inp, d.spec, dt)
+	local hv = (look * d.c.v + left * d.c.vl) * S
+	chassis.AssemblyLinearVelocity = Vector3.new(hv.X, vel.Y, hv.Z)
+	chassis.AssemblyAngularVelocity = Vector3.new(0, d.c.yaw, 0)
+
+	-- Ruedas, luces y motor
+	for pos, m in pairs(d.motors) do
+		if m.steer and string.sub(pos, 1, 1) == "F" then
+			m.steer.C0 = m.steer:GetAttribute("BaseC0") * CFrame.Angles(0, d.c.steer, 0)
+		end
+		if m.spin then
+			d.spin[pos] = d.spin[pos] - d.c.v * dt / d.spec.wheelR
+			m.spin.C0 = CFrame.Angles(d.spin[pos], 0, 0)
+		end
+	end
+	for _, p in ipairs(d.tail) do p.Color = d.c.braking and Color3.fromRGB(255, 30, 30) or Color3.fromRGB(120, 0, 0) end
+	for _, p in ipairs(d.rev) do p.Material = gear == -1 and Enum.Material.Neon or Enum.Material.SmoothPlastic end
+	Physics.drivetrain(d.dt, d.spec.engine, d.c.v, inp.throttle, dt)
+	if d.sound then
+		d.sound.PlaybackSpeed = clamp(d.dt.rpm / Config.SOUND_BASE_RPM, 0.25, 3.5)
+		d.sound.Volume = 0.3 + 0.4 * inp.throttle
+	end
+
+	if not d.over then d.time = d.time + dt end
+	speedLabel.Text = tostring(math.floor(math.abs(d.c.v) * 3.6 + 0.5))
+	gearLabel.Text = "km/h · " .. (gear == -1 and "R" or ("D" .. d.dt.gear))
+
+	if d.res.mode == "level" then
+		hudTimer.Text = string.format("%.1f s", d.time)
+		-- Roces: cualquier contacto con un obstáculo termina el nivel (salvo modo sin choques).
+		if not d.over and not d.res.god and d.obstacles then
+			local hits = workspace:GetPartsInPart(d.hitbox, d.overlap)
+			if #hits > 0 then failLevel(hits[1]) end
+		end
+		if not d.over then
+			local ok = Physics.parkedIn(cf, d.spec.w * S / 2, d.spec.l * S / 2, d.res.targetCF, d.res.targetHW, d.res.targetHL)
+			if ok and math.abs(d.c.v) < 0.15 then d.inSpot = d.inSpot + dt elseif not ok then d.inSpot = 0 end
+			parkBar.Visible = ok
+			parkFill.Size = UDim2.fromScale(math.min(1, d.inSpot / 1.2), 1)
+			if d.targetPart then d.targetPart.Color = ok and Color3.fromRGB(34, 224, 107) or Color3.fromRGB(255, 212, 0) end
+			if d.inSpot >= 1.2 then completeLevel() end
+		end
+	else
+		hudTimer.Text = profile and formatCoins(profile.coins) or ""
+		parkBar.Visible = false
+		-- Monedas de la ciudad
+		for id, coin in pairs(cityCoins) do
+			if coin.Transparency < 1 and not coinPending[id] and (coin.Position - chassis.Position).Magnitude < 2.5 * S then
+				coinPending[id] = true
+				task.spawn(function()
+					call("collect", { id = id })
+					coinPending[id] = nil
+				end)
+			end
+		end
+	end
+end)
+
+-- Cámara: sigue el rumbo suavizado del coche (como en la versión web).
+RunService.RenderStepped:Connect(function(dt)
+	for _, coin in pairs(cityCoins) do
+		coin.CFrame = coin.CFrame * CFrame.Angles(0, dt * 2, 0)
+	end
+	if previewModel and screens.garage.Visible then
+		local t = os.clock() * 0.4
+		local cf, size = previewModel:GetBoundingBox()
+		local r = size.Magnitude * 1.1
+		vpCamera.CFrame = CFrame.lookAt(cf.Position + Vector3.new(math.sin(t) * r, size.Magnitude * 0.35, math.cos(t) * r), cf.Position)
+	end
+	local d = drive
+	if not d or not d.chassis.Parent then return end
+	local cf = d.chassis.CFrame
+	local carHeading = math.atan2(cf.LookVector.X, cf.LookVector.Z)
+	local diff = math.atan2(math.sin(carHeading - d.heading), math.cos(carHeading - d.heading))
+	d.heading = d.heading + diff * math.min(1, dt * 3.5)
+	local dir = Vector3.new(math.sin(d.heading), 0, math.cos(d.heading))
+	local p = cf.Position
+	local camPos, lookAt
+	if camMode == 0 then
+		camPos = p - dir * 7.5 * S + Vector3.new(0, 3.2 * S, 0)
+		lookAt = p + cf.LookVector * 1.5 * S + Vector3.new(0, 0.6 * S, 0)
+	elseif camMode == 1 then
+		camPos = p - dir * 5 * S + Vector3.new(0, 13 * S, 0)
+		lookAt = p + cf.LookVector * 1.5 * S
+	elseif camMode == 2 then
+		camPos = p + Vector3.new(0, 24 * S, 0) - dir * 0.05
+		lookAt = p
+	else
+		camPos = p + cf.LookVector * 0.3 * S + Vector3.new(0, 0.9 * S, 0)
+		lookAt = p + cf.LookVector * 10 * S + Vector3.new(0, 0.6 * S, 0)
+	end
+	local k = camMode == 3 and 1 or math.min(1, dt * 10)
+	camera.CFrame = camera.CFrame:Lerp(CFrame.lookAt(camPos, lookAt), k)
+	camera.FieldOfView = 70 + math.min(12, math.abs(d.c.v) * 0.35)
+end)
+
+-- ===================== Botones y eventos =====================
+btnLevels.Activated:Connect(openLevels)
+btnCity.Activated:Connect(function() startPlay({ mode = "city" }) end)
+btnGarage.Activated:Connect(openGarage)
+btnAdmin.Activated:Connect(function()
+	renderAdmin()
+	admin.Visible = true
+end)
+levelsBack.Activated:Connect(function() show("menu") end)
+gBack.Activated:Connect(function() show("menu") end)
+gPrev.Activated:Connect(function()
+	garageIndex = (garageIndex - 2) % #GameData.CAR_ORDER + 1
+	renderGarage()
+end)
+gNext.Activated:Connect(function()
+	garageIndex = garageIndex % #GameData.CAR_ORDER + 1
+	renderGarage()
+end)
+gAction.Activated:Connect(function()
+	if not profile then return end
+	local key = GameData.CAR_ORDER[garageIndex]
+	if contains(profile.owned, key) then
+		call("select", { car = key })
+	else
+		local res = call("buy", { car = key })
+		if res.ok then toast("¡" .. GameData.CARS[key].name .. " comprado!") end
+	end
+end)
+btnCam.Activated:Connect(function()
+	camMode = (camMode + 1) % 4
+	toast(CAM_NAMES[camMode])
+end)
+btnExit.Activated:Connect(function() stopDriving() end)
+
+remotes:WaitForChild("ProfileChanged").OnClientEvent:Connect(function(p)
+	profile = p
+	refreshCoins()
+	if screens.garage.Visible then renderGarage() end
+	if admin.Visible then renderAdmin() end
+end)
+
+-- Monedas de la ciudad (se construye en el servidor)
+task.spawn(function()
+	local cityFolder = workspace:WaitForChild("City", 30)
+	local coins = cityFolder and cityFolder:WaitForChild("Coins", 30)
+	if not coins then return end
+	local function add(c)
+		local id = c:GetAttribute("CoinId")
+		if id then cityCoins[id] = c end
+	end
+	for _, c in ipairs(coins:GetChildren()) do add(c) end
+	coins.ChildAdded:Connect(add)
+end)
+
+show("menu")
+-- La partida puede tardar un poco en cargarse en el servidor.
+while not profile do
+	local p = call("profile")
+	if p and p.ok ~= false and p.coins then
+		profile = p
+	else
+		task.wait(1)
+	end
+end
+refreshCoins()
+]]></ProtectedString></Properties></Item></Item></Item></roblox>

@@ -1,0 +1,76 @@
+<!doctype html>
+<!-- Exporta los coches del juego a .glb para importarlos en Roblox Studio.
+     Servir la raíz del repositorio (npx http-server .) y abrir /tools/export-roblox.html:
+     el resultado queda en window.exported (un .glb en base64 por coche). -->
+<html><head><meta charset="utf-8"><title>Exportar coches</title></head>
+<body>
+<script type="module">
+import * as THREE from '../www/vendor/three.module.min.js';
+import { mergeGeometries } from '../www/vendor/BufferGeometryUtils.js';
+import { GLTFExporter } from './GLTFExporter.js';
+import { buildCar, MAT } from '../www/js/cars.js';
+import { CARS, CAR_ORDER } from '../www/js/specs.js';
+
+// Nombre de cada pieza según su material: el script de Roblox busca las piezas por nombre
+// (Body se pinta con el color del jugador, las ruedas giran, etc.).
+function partName(mat, ud) {
+  if (mat === ud.paint) return 'Body';
+  if (mat === ud.brakeMat) return 'Taillights';
+  if (mat === ud.revMat) return 'ReverseLights';
+  const named = new Map([
+    [MAT.glass, 'Glass'], [MAT.black, 'Trim'], [MAT.carbon, 'Carbon'], [MAT.chrome, 'Chrome'],
+    [MAT.head, 'Headlights'], [MAT.amber, 'Indicators'], [MAT.plate, 'Plates'],
+  ]);
+  return named.get(mat) || 'Trim';
+}
+function wheelPartName(mat) {
+  if (mat === MAT.tire || mat === MAT.black) return 'Tire';
+  if (mat === MAT.disc) return 'Disc';
+  if (mat.color && mat.metalness > 0.8) return 'Rim';
+  return 'Caliper';
+}
+
+async function exportCar(key) {
+  const car = buildCar(key, '#c81e1e');
+  car.updateMatrixWorld(true);
+  const parts = new Map(); // nombre -> { geos, color }
+  const add = (name, mesh) => {
+    const g = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    g.applyMatrix4(mesh.matrixWorld);
+    g.rotateY(Math.PI); // en Roblox el frente del coche es -Z
+    for (const k of Object.keys(g.attributes)) if (!['position', 'normal'].includes(k)) g.deleteAttribute(k);
+    if (!parts.has(name)) parts.set(name, { geos: [], color: mesh.material.color.clone() });
+    parts.get(name).geos.push(g);
+  };
+  const ud = car.userData;
+  ud.body.traverse(o => { if (o.isMesh) add(partName(o.material, ud), o); });
+  for (const pivot of car.children) {
+    if (pivot === ud.body || !pivot.children.length || pivot.isMesh) continue;
+    // Tras girar 180°, el lado +X del coche queda a la izquierda en Roblox.
+    const pos = (pivot.position.z > 0 ? 'F' : 'R') + (pivot.position.x > 0 ? 'L' : 'R');
+    pivot.traverse(o => { if (o.isMesh) add(`${wheelPartName(o.material)}_${pos}`, o); });
+  }
+  const scene = new THREE.Scene();
+  const group = new THREE.Group();
+  group.name = key;
+  scene.add(group);
+  const report = {};
+  for (const [name, { geos, color }] of parts) {
+    const geo = mergeGeometries(geos);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color, name }));
+    mesh.name = name;
+    group.add(mesh);
+    report[name] = geo.attributes.position.count / 3;
+  }
+  const glb = await new GLTFExporter().parseAsync(scene, { binary: true });
+  const bytes = new Uint8Array(glb);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return { glb: btoa(bin), triangles: report, size: bytes.length };
+}
+
+window.exported = {};
+for (const key of CAR_ORDER) window.exported[key] = await exportCar(key);
+document.title = 'listo';
+</script>
+</body></html>
