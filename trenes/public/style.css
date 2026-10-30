@@ -59,3 +59,6 @@ footer{color:var(--suave);font-size:12px;padding:14px 16px 28px;text-align:cente
 @media (max-width:720px){.resumen{grid-template-columns:repeat(2,1fr)}.resumen .kpi:first-child{grid-column:span 2}
   .lista th:nth-child(3),.lista td:nth-child(3){display:none}.tablero td{font-size:13px}.tablero th:nth-child(4),.tablero td:nth-child(4){display:none}
   .barra{grid-template-columns:100px 1fr 56px}}
+.ciudad{position:relative;pointer-events:none}
+.ciudad i{position:absolute;left:-4px;top:-4px;width:8px;height:8px;border-radius:2px;background:#e6edf3;border:1.5px solid #0b1118}
+.ciudad span{position:absolute;left:8px;top:-9px;white-space:nowrap;font-size:11px;font-weight:600;color:#c9d4de;text-shadow:0 0 3px #0b1118,0 0 3px #0b1118}

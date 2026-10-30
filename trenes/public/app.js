@@ -135,6 +135,7 @@ function generarDemo() {
       const duracion = 150 + (semilla % 5) * 30;
       const f = ((ahora / duracion) + k / 4 + i * 0.037) % 1;
       const A = ESTACIONES[o], B = ESTACIONES[d];
+      const [lat, lon] = puntoEnRecorrido(recorrido(o, d), f);
       const azar = Math.abs(Math.sin(semilla + Math.floor(ahora / 30)));
       const retraso = azar < 0.7 ? Math.floor(azar / 0.7 * 5) : azar < 0.92 ? 6 + Math.floor((azar - 0.7) / 0.22 * 10) : 16 + Math.floor((azar - 0.92) / 0.08 * 40);
       const fecha = new Date(); const minDia = fecha.getHours() * 60 + fecha.getMinutes();
@@ -142,7 +143,7 @@ function generarDemo() {
         id: `LD-D${i}${k}`, tipo: 'LD', producto: prod, numero: String(2000 + i * 40 + k * 3).padStart(5, '0'), linea: '',
         origen: A.n, destino: B.n, anterior: A.n, codSiguiente: d, siguiente: B.n,
         horaSig: (minDia + Math.round((1 - f) * duracion) + retraso) % 1440,
-        retraso, lat: A.lat + (B.lat - A.lat) * f, lon: A.lon + (B.lon - A.lon) * f, gps: true, material: '',
+        retraso, lat, lon, gps: true, material: '',
       });
     }
   });
@@ -150,6 +151,24 @@ function generarDemo() {
     trenes,
     alertas: [{ titulo: 'DEMO · Incidencia en infraestructura entre Madrid y Toledo', texto: 'Datos de ejemplo: así se verán los avisos oficiales de Renfe.', lineas: ['Avant'] }],
   };
+}
+
+// Recorrido sobre las vías entre dos estaciones (de mapa-espana.js), o línea recta si no hay
+function recorrido(o, d) {
+  const r = window.MAPA_ESPANA?.recorridos || {};
+  if (r[`${o}-${d}`]) return r[`${o}-${d}`];
+  if (r[`${d}-${o}`]) return [...r[`${d}-${o}`]].reverse();
+  return [[ESTACIONES[o].lon, ESTACIONES[o].lat], [ESTACIONES[d].lon, ESTACIONES[d].lat]];
+}
+
+function puntoEnRecorrido(pts, f) {
+  const tramos = pts.slice(1).map((p, i) => Math.hypot(p[0] - pts[i][0], p[1] - pts[i][1]));
+  let resto = f * tramos.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < tramos.length; i++) {
+    if (resto <= tramos[i]) { const t = resto / (tramos[i] || 1), a = pts[i], b = pts[i + 1]; return [a[1] + (b[1] - a[1]) * t, a[0] + (b[0] - a[0]) * t]; }
+    resto -= tramos[i];
+  }
+  const u = pts[pts.length - 1]; return [u[1], u[0]];
 }
 
 // ---------- Carga ----------
@@ -264,21 +283,68 @@ function pintarIncidencias() {
     || '<p class="vacio">Sin datos de retraso.</p>';
 }
 
+// Coloca el punto sobre la vía dibujada si el GPS está a menos de 3 km de ella (solo afecta al dibujo)
+let indiceVias;
+function ajustarAVia(lat, lon) {
+  const vias = window.MAPA_ESPANA?.vias; if (!vias) return [lat, lon];
+  const celda = (x, y) => `${Math.floor(x * 10)},${Math.floor(y * 10)}`;
+  if (!indiceVias) {
+    indiceVias = {};
+    for (const v of vias) for (let i = 1; i < v.length; i++) {
+      const [a, b] = [v[i - 1], v[i]];
+      for (let x = Math.floor(Math.min(a[0], b[0]) * 10); x <= Math.floor(Math.max(a[0], b[0]) * 10); x++)
+        for (let y = Math.floor(Math.min(a[1], b[1]) * 10); y <= Math.floor(Math.max(a[1], b[1]) * 10); y++)
+          (indiceVias[`${x},${y}`] ||= []).push([a, b]);
+    }
+  }
+  const kx = 111.32 * Math.cos(lat * Math.PI / 180), ky = 110.57;
+  let mejor = null, dmin = 3;
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+    for (const [a, b] of indiceVias[celda(lon + dx / 10, lat + dy / 10)] || []) {
+      const ax = (a[0] - lon) * kx, ay = (a[1] - lat) * ky, bx = (b[0] - lon) * kx, by = (b[1] - lat) * ky;
+      const L2 = (bx - ax) ** 2 + (by - ay) ** 2;
+      const t = L2 ? Math.max(0, Math.min(1, -(ax * (bx - ax) + ay * (by - ay)) / L2)) : 0;
+      const d = Math.hypot(ax + t * (bx - ax), ay + t * (by - ay));
+      if (d < dmin) { dmin = d; mejor = [a[1] + t * (b[1] - a[1]), a[0] + t * (b[0] - a[0])]; }
+    }
+  }
+  return mejor || [lat, lon];
+}
+
+const PRINCIPALES = ['60000', '71801', '51003', '50500', '54413', '04040', '10600', '03216', '60911', '13200', '31412', '31400', '15100'];
+
+function crearMapa() {
+  mapa = L.map('mapa', { preferCanvas: true, zoomSnap: 0.5, minZoom: 5, maxBounds: [[33, -13], [46, 7]] }).fitBounds([[36, -9.3], [43.8, 3.3]]);
+  const M = window.MAPA_ESPANA;
+  if (M) {
+    const anillos = a => a.map(r => r.map(([x, y]) => [y, x]));
+    for (const [iso, a] of Object.entries(M.paises)) {
+      const esp = iso === 'ESP';
+      L.polygon(anillos(a).map(r => [r]), { stroke: esp, color: '#3d5468', weight: 1.2, fillColor: esp ? '#1b2836' : '#121b24', fillOpacity: 1, interactive: false }).addTo(mapa);
+    }
+    L.polyline(anillos(M.provincias), { color: '#2a3b4c', weight: .7, interactive: false }).addTo(mapa);
+    L.polyline(anillos(M.vias), { color: '#0b1118', weight: 4, opacity: .9, interactive: false }).addTo(mapa);
+    L.polyline(anillos(M.vias), { color: '#6f8396', weight: 1.6, dashArray: null, interactive: false }).addTo(mapa);
+  }
+  for (const c of PRINCIPALES) {
+    const e = ESTACIONES[c]; if (!e) continue;
+    L.marker([e.lat, e.lon], { interactive: false, icon: L.divIcon({ className: 'ciudad', html: `<i></i><span>${esc(e.n.replace(/-.*/, ''))}</span>`, iconSize: [0, 0] }) }).addTo(mapa);
+  }
+  const calles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18, attribution: '© OpenStreetMap · © CARTO' });
+  L.control.layers(null, { 'Calles (OpenStreetMap)': calles }, { position: 'topright' }).addTo(mapa);
+  mapa.attributionControl.addAttribution('Vías y límites: Natural Earth');
+  capa = L.layerGroup().addTo(mapa);
+}
+
 let mapa, capa;
 function pintarMapa() {
   if (!window.L || !$('#v-mapa').classList.contains('activa')) return;
-  if (!mapa) {
-    mapa = L.map('mapa', { preferCanvas: true }).setView([40.2, -3.7], 6);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 18, attribution: '© OpenStreetMap · © CARTO',
-    }).addTo(mapa);
-    capa = L.layerGroup().addTo(mapa);
-  }
+  if (!mapa) crearMapa();
   capa.clearLayers();
   const colores = { 0: '#2fbf71', 1: '#a3d65c', 2: '#f5a623', 3: '#ef4b4b', n: '#8ea0b2' };
   for (const t of estado.trenes) {
     if (t.lat == null || t.lon == null || !t.gps) continue;
-    L.circleMarker([t.lat, t.lon], { radius: t.tipo === 'CER' ? 4 : 6, weight: 1, color: '#0008', fillColor: colores[claseRetraso(t.retraso)], fillOpacity: .95 })
+    L.circleMarker(ajustarAVia(+t.lat, +t.lon), { radius: t.tipo === 'CER' ? 4 : 6.5, weight: 1.5, color: '#0b1118', fillColor: colores[claseRetraso(t.retraso)], fillOpacity: 1 })
       .bindTooltip(`${t.tipo === 'CER' ? t.linea : t.producto} ${t.numero} · ${textoRetraso(t.retraso)}`)
       .on('click', () => abrirDetalle(t.id)).addTo(capa);
   }
