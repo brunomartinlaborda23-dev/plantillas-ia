@@ -25,6 +25,7 @@
 
 <nav class="pestanas">
   <button data-vista="panel" class="activa">🕒 Panel de estación</button>
+  <button data-vista="provincia">📍 Mi provincia</button>
   <button data-vista="lista">📋 Todos los trenes</button>
   <button data-vista="mapa">🗺️ Mapa</button>
   <button data-vista="incidencias">⚠️ Incidencias <span id="nInc" class="badge"></span></button>
@@ -43,6 +44,25 @@
       </table>
       <p class="nota">Trenes cuya próxima parada es esta estación, con la hora prevista de llegada que publica Renfe.</p>
     </div>
+  </section>
+
+  <section id="v-provincia" class="vista">
+    <div class="filtros">
+      <label>Provincia <select id="selProvincia"></select></label>
+      <label>Ciudad o estación <select id="selCiudad"></select></label>
+      <button id="btnUbicacion" class="boton-sec">📍 Usar mi ubicación</button>
+      <button id="btnVerMapa" class="boton-sec">🗺️ Ver en el mapa</button>
+    </div>
+    <div class="resumen mini">
+      <div class="kpi"><b id="pLlegan">–</b><span>trenes llegan en la próxima hora</span></div>
+      <div class="kpi"><b id="pCirculan">–</b><span>circulando ahora por la provincia</span></div>
+      <div class="kpi"><b id="pMedia">–</b><span>retraso medio aquí</span></div>
+    </div>
+    <h2>Próximas llegadas <span id="pTitulo" class="sub"></span></h2>
+    <div id="pLlegadas" class="tarjetas"></div>
+    <h2>Circulando ahora por <span id="pNombre"></span></h2>
+    <div id="pCirculando" class="tarjetas"></div>
+    <p class="nota">"Llega en" se calcula con la hora prevista que publica Renfe para la próxima parada de cada tren.</p>
   </section>
 
   <section id="v-lista" class="vista">

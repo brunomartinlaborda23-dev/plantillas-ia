@@ -22,6 +22,9 @@ Para ver la interfaz con datos simulados: <http://localhost:8090/?demo>.
 
 - **Panel de estación**: elige una estación y ves los trenes que van hacia ella, con la hora prevista y su estado
   (EN HORA, +7 MIN, RETRASO 25 MIN parpadeando).
+- **Mi provincia**: eliges tu provincia (o pulsas "Usar mi ubicación") y, si quieres, una ciudad o estación.
+  Ves los trenes que van a llegar allí con una cuenta atrás ("llega en 12 min") y la hora prevista, y los trenes que
+  circulan ahora mismo por la provincia. "Ver en el mapa" te lleva al mapa con la provincia resaltada.
 - **Todos los trenes**: búsqueda por número, línea o estación; filtros por tipo (larga/media distancia o Cercanías)
   y por retraso.
 - **Mapa**: posición GPS de cada tren, con un color según el retraso (verde, lima, naranja, rojo).
@@ -39,6 +42,7 @@ Son datos abiertos de Renfe ([data.renfe.com](https://data.renfe.com)):
 | Cercanías: posición | `gtfsrt.renfe.com/vehicle_positions.json` (GTFS-RT) |
 | Cercanías: retrasos | `gtfsrt.renfe.com/trip_updates.json` (GTFS-RT) |
 | Avisos | `gtfsrt.renfe.com/alerts.json` (GTFS-RT) |
+| Mapa, vías y provincias | Natural Earth (dominio público), generado con `tools/generar-mapa.py` |
 | Nombres de estaciones | `stops.txt` de los GTFS de Renfe (se descargan una vez al día) |
 
 El navegador no puede pedir esos datos directamente (bloqueo CORS), por eso `server.mjs` hace de intermediario

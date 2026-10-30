@@ -217,7 +217,7 @@ function pintar() {
   $('#hora').textContent = 'Actualizado ' + estado.actualizado.toLocaleTimeString('es-ES');
   const nInc = estado.alertas.length + trenes.filter(t => t.retraso > 15).length;
   $('#nInc').textContent = nInc || '';
-  pintarPanel(); pintarLista(); pintarIncidencias(); pintarMapa();
+  pintarPanel(); pintarProvincia(); pintarLista(); pintarIncidencias(); pintarMapa();
 }
 
 function pintarPanel() {
@@ -322,7 +322,7 @@ function crearMapa() {
       const esp = iso === 'ESP';
       L.polygon(anillos(a).map(r => [r]), { stroke: esp, color: '#3d5468', weight: 1.2, fillColor: esp ? '#1b2836' : '#121b24', fillOpacity: 1, interactive: false }).addTo(mapa);
     }
-    L.polyline(anillos(M.provincias), { color: '#2a3b4c', weight: .7, interactive: false }).addTo(mapa);
+    L.polyline(anillos(M.provincias.flatMap(p => p.r)), { color: '#2a3b4c', weight: .7, interactive: false }).addTo(mapa);
     L.polyline(anillos(M.vias), { color: '#0b1118', weight: 4, opacity: .9, interactive: false }).addTo(mapa);
     L.polyline(anillos(M.vias), { color: '#6f8396', weight: 1.6, dashArray: null, interactive: false }).addTo(mapa);
   }
@@ -333,10 +333,11 @@ function crearMapa() {
   const calles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18, attribution: '© OpenStreetMap · © CARTO' });
   L.control.layers(null, { 'Calles (OpenStreetMap)': calles }, { position: 'topright' }).addTo(mapa);
   mapa.attributionControl.addAttribution('Vías y límites: Natural Earth');
+  zonaResaltada = L.layerGroup().addTo(mapa);
   capa = L.layerGroup().addTo(mapa);
 }
 
-let mapa, capa;
+let mapa, capa, zonaResaltada;
 function pintarMapa() {
   if (!window.L || !$('#v-mapa').classList.contains('activa')) return;
   if (!mapa) crearMapa();
@@ -383,6 +384,93 @@ function comprobarVigilados() {
   }
 }
 
+// ---------- Mi provincia ----------
+
+const PROVINCIAS = window.MAPA_ESPANA?.provincias || [];
+for (const p of PROVINCIAS) {
+  const pts = p.r.flat();
+  p.caja = [Math.min(...pts.map(c => c[0])), Math.min(...pts.map(c => c[1])), Math.max(...pts.map(c => c[0])), Math.max(...pts.map(c => c[1]))];
+}
+
+// Regla par-impar sobre todos los anillos, así los enclaves (Treviño, Llívia…) quedan bien
+function enProvincia(p, lat, lon) {
+  if (lon < p.caja[0] || lon > p.caja[2] || lat < p.caja[1] || lat > p.caja[3]) return false;
+  let dentro = false;
+  for (const r of p.r) for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+    const [xi, yi] = r[i], [xj, yj] = r[j];
+    if ((yi > lat) !== (yj > lat) && lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) dentro = !dentro;
+  }
+  return dentro;
+}
+const provinciaDe = (lat, lon) => lat == null || lon == null ? null : PROVINCIAS.find(p => enProvincia(p, +lat, +lon))?.n ?? null;
+const provinciaEstacion = {};
+function provinciaDeEstacion(cod) {
+  if (!(cod in provinciaEstacion)) { const e = ESTACIONES[cod] || ESTACIONES[String(cod).padStart(5, '0')]; provinciaEstacion[cod] = e ? provinciaDe(e.lat, e.lon) : null; }
+  return provinciaEstacion[cod];
+}
+
+// Minutos que faltan para la hora prevista (minutos del día); null si no hay hora o ya pasó hace rato
+function minutosHasta(horaSig) {
+  if (horaSig == null) return null;
+  const d = new Date(), ahora = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+  const m = ((horaSig - ahora) % 1440 + 1440) % 1440;
+  return m > 1380 ? 0 : Math.round(m);
+}
+const textoLlegada = m => m == null ? '—' : m <= 1 ? 'Llegando' : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
+
+function tarjeta(t, mostrarParada) {
+  const m = minutosHasta(t.horaSig);
+  return `<div class="tarjeta" data-id="${esc(t.id)}">
+    <div class="cuenta ${m != null && m <= 5 ? 'pronto' : ''}"><small>${m == null ? 'llegada' : m <= 1 ? '' : 'llega en'}</small><b>${textoLlegada(m)}</b><small>${minutosAHora(t.horaSig)}</small></div>
+    <div class="info"><div>${chipTipo(t)} <span class="num">${esc(t.numero)}</span> ${chipRetraso(t.retraso)}</div>
+      ${t.origen ? `<div>${esc(t.origen)} → <b>${esc(t.destino)}</b></div>` : ''}
+      ${mostrarParada ? `<div class="sub">Próxima parada: ${esc(t.siguiente)}${t.enParada ? ' (en andén)' : ''}</div>` : `<div class="sub">Llega a ${esc(t.siguiente)}</div>`}</div></div>`;
+}
+
+function pintarProvincia() {
+  const selP = $('#selProvincia'), selC = $('#selCiudad');
+  if (!selP.options.length) {
+    const porComunidad = {};
+    for (const p of PROVINCIAS) (porComunidad[p.c] ||= []).push(p.n);
+    selP.innerHTML = Object.keys(porComunidad).sort((a, b) => a.localeCompare(b, 'es')).map(c =>
+      `<optgroup label="${esc(c)}">${porComunidad[c].sort((a, b) => a.localeCompare(b, 'es')).map(n => `<option>${esc(n)}</option>`).join('')}</optgroup>`).join('');
+    selP.value = leer('provincia', 'Madrid');
+  }
+  const prov = selP.value;
+  const llegan = estado.trenes.filter(t => t.codSiguiente && provinciaDeEstacion(t.codSiguiente) === prov);
+  const circulan = estado.trenes.filter(t => t.gps && provinciaDe(t.lat, t.lon) === prov);
+
+  // Ciudades/estaciones de la provincia hacia las que va algún tren
+  const estaciones = [...new Set(llegan.map(t => t.codSiguiente))].sort((a, b) => nombre(a).localeCompare(nombre(b), 'es'));
+  const ciudadAntes = selC.value;
+  selC.innerHTML = `<option value="">Todas (${llegan.length} trenes)</option>` + estaciones.map(c =>
+    `<option value="${esc(c)}">${esc(nombre(c))} (${llegan.filter(t => t.codSiguiente === c).length})</option>`).join('');
+  if (estaciones.includes(ciudadAntes)) selC.value = ciudadAntes;
+  const ciudad = selC.value;
+
+  const lista = llegan.filter(t => !ciudad || t.codSiguiente === ciudad)
+    .sort((a, b) => (minutosHasta(a.horaSig) ?? 1e9) - (minutosHasta(b.horaSig) ?? 1e9));
+  const conDato = [...new Set([...llegan, ...circulan])].filter(t => t.retraso != null);
+  $('#pLlegan').textContent = llegan.filter(t => (minutosHasta(t.horaSig) ?? 999) <= 60).length;
+  $('#pCirculan').textContent = circulan.length;
+  $('#pMedia').textContent = conDato.length ? (conDato.reduce((s, t) => s + Math.max(0, t.retraso), 0) / conDato.length).toFixed(1) + ' min' : '–';
+  $('#pTitulo').textContent = ciudad ? `a ${nombre(ciudad)}` : `a estaciones de ${prov}`;
+  $('#pNombre').textContent = prov;
+  $('#pLlegadas').innerHTML = lista.map(t => tarjeta(t, false)).join('') || `<p class="vacio">Ahora mismo no hay trenes en camino a ${esc(ciudad ? nombre(ciudad) : prov)}.</p>`;
+  $('#pCirculando').innerHTML = circulan.sort((a, b) => (minutosHasta(a.horaSig) ?? 1e9) - (minutosHasta(b.horaSig) ?? 1e9))
+    .map(t => tarjeta(t, true)).join('') || `<p class="vacio">No hay trenes con GPS dentro de ${esc(prov)} ahora mismo.</p>`;
+}
+
+function verProvinciaEnMapa() {
+  const p = PROVINCIAS.find(x => x.n === $('#selProvincia').value); if (!p || !window.L) return;
+  document.querySelector('.pestanas button[data-vista="mapa"]').click();
+  setTimeout(() => {
+    zonaResaltada.clearLayers();
+    L.polygon(p.r.map(r => [r.map(([x, y]) => [y, x])]), { color: '#4fb3ff', weight: 2, fillColor: '#4fb3ff', fillOpacity: .08, interactive: false }).addTo(zonaResaltada);
+    mapa.fitBounds([[p.caja[1], p.caja[0]], [p.caja[3], p.caja[2]]], { padding: [20, 20] });
+  }, 80);
+}
+
 // ---------- Eventos ----------
 
 document.querySelectorAll('.pestanas button').forEach(b => b.onclick = () => {
@@ -394,10 +482,24 @@ document.querySelectorAll('.pestanas button').forEach(b => b.onclick = () => {
 ['#buscar', '#filTipo', '#filRetraso', '#orden'].forEach(s => $(s).addEventListener('input', pintarLista));
 $('#selEstacion').onchange = () => { guardar('estacion', $('#selEstacion').value); pintarPanel(); };
 document.addEventListener('click', e => {
-  const fila = e.target.closest('tr[data-id]'); if (fila) abrirDetalle(fila.dataset.id);
+  const fila = e.target.closest('tr[data-id], .tarjeta[data-id]'); if (fila) abrirDetalle(fila.dataset.id);
   if (e.target.matches('.cerrar') || e.target.id === 'detalle') $('#detalle').hidden = true;
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#detalle').hidden = true; });
+$('#selProvincia').onchange = () => { guardar('provincia', $('#selProvincia').value); $('#selCiudad').value = ''; pintarProvincia(); };
+$('#selCiudad').onchange = pintarProvincia;
+$('#btnVerMapa').onclick = verProvinciaEnMapa;
+$('#btnUbicacion').onclick = () => {
+  const b = $('#btnUbicacion');
+  if (!navigator.geolocation) { b.textContent = 'Ubicación no disponible'; return; }
+  b.textContent = 'Buscando…';
+  navigator.geolocation.getCurrentPosition(pos => {
+    const p = provinciaDe(pos.coords.latitude, pos.coords.longitude);
+    b.textContent = p ? `📍 ${p}` : 'Fuera de las provincias con tren';
+    if (p) { $('#selProvincia').value = p; $('#selProvincia').onchange(); }
+  }, () => { b.textContent = 'No se pudo obtener tu ubicación'; }, { timeout: 10000 });
+};
+setInterval(() => { if (estado.actualizado && $('#v-provincia').classList.contains('activa')) pintarProvincia(); }, 20000);
 setInterval(() => { $('#tabReloj').textContent = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }); }, 1000);
 
 document.querySelector(`.pestanas button[data-vista="${leer('vista', 'panel')}"]`)?.click();

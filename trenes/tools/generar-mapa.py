@@ -52,14 +52,17 @@ for f in json.load(open(ORIGEN / 'ne_10m_admin_0_countries.geojson'))['features'
         if len(s) > 3: anillos.append(r3(s))
     paises[iso] = anillos
 
-# Límites de provincias de España
+# Provincias de España con su nombre actual (sin Canarias, Ceuta y Melilla: no tienen tren de Renfe)
+NOMBRES = {'La Coruña': 'A Coruña', 'Gerona': 'Girona', 'Lérida': 'Lleida', 'Orense': 'Ourense', 'Baleares': 'Illes Balears',
+           'Álava': 'Araba/Álava', 'Castellón': 'Castelló', 'Alicante': 'Alacant/Alicante', 'Valencia': 'València'}
+COMUNIDADES = {'Valenciana': 'Comunitat Valenciana', 'Foral de Navarra': 'Navarra', 'Islas Baleares': 'Illes Balears'}
 provincias = []
 for f in json.load(open(ORIGEN / 'ne_10m_admin_1_states_provinces.geojson'))['features']:
-    if f['properties'].get('adm0_a3') != 'ESP': continue
-    for anillo in lineas(f['geometry']):
-        if all(dentro(c) for c in anillo):
-            s = simplificar_anillo(anillo, 0.015)
-            if len(s) > 3: provincias.append(r3(s))
+    pr = f['properties']
+    if pr.get('adm0_a3') != 'ESP' or pr['name'] in ('Ceuta', 'Melilla', 'Las Palmas', 'Santa Cruz de Tenerife'): continue
+    anillos = [r3(s) for a in lineas(f['geometry']) if all(dentro(c) for c in a) for s in [simplificar_anillo(a, 0.015)] if len(s) > 3]
+    provincias.append({'n': NOMBRES.get(pr['name'], pr['name']), 'c': COMUNIDADES.get(pr['region'], pr['region']), 'r': anillos})
+provincias.sort(key=lambda p: p['n'])
 
 # Red ferroviaria
 vias = []

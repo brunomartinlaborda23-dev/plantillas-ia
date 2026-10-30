@@ -62,3 +62,16 @@ footer{color:var(--suave);font-size:12px;padding:14px 16px 28px;text-align:cente
 .ciudad{position:relative;pointer-events:none}
 .ciudad i{position:absolute;left:-4px;top:-4px;width:8px;height:8px;border-radius:2px;background:#e6edf3;border:1.5px solid #0b1118}
 .ciudad span{position:absolute;left:8px;top:-9px;white-space:nowrap;font-size:11px;font-weight:600;color:#c9d4de;text-shadow:0 0 3px #0b1118,0 0 3px #0b1118}
+.boton-sec{background:var(--fondo);color:var(--texto);border:1px solid var(--borde);border-radius:8px;padding:8px 12px;font:inherit;cursor:pointer}
+.boton-sec:hover{border-color:var(--acento)}
+.resumen.mini{grid-template-columns:repeat(3,1fr);padding:0 0 4px}
+.tarjetas{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
+.tarjeta{display:flex;gap:12px;align-items:center;background:var(--fondo);border:1px solid var(--borde);border-radius:12px;padding:10px 12px;cursor:pointer}
+.tarjeta:hover{border-color:var(--acento)}
+.cuenta{min-width:84px;text-align:center;border-right:1px solid var(--borde);padding-right:12px;display:flex;flex-direction:column}
+.cuenta b{font-size:22px;font-variant-numeric:tabular-nums;color:var(--ambar);line-height:1.15}
+.cuenta small{color:var(--suave);font-size:11px}
+.cuenta.pronto b{color:#7ff0ad}
+.info{display:flex;flex-direction:column;gap:3px;min-width:0}
+@media (max-width:720px){.resumen.mini{grid-template-columns:repeat(3,1fr)}.resumen.mini .kpi:first-child{grid-column:auto}
+  .resumen.mini b{font-size:20px}.tarjetas{grid-template-columns:1fr}}
