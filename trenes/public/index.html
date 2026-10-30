@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>TrenVivo · Trenes en tiempo real</title>
+<meta name="theme-color" content="#0f1720">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="marca"><span class="logo">🚆</span><div><h1>TrenVivo</h1><small>Trenes de España en tiempo real</small></div></div>
+  <div class="estado"><span id="fuente" class="chip">Cargando…</span><span id="hora"></span></div>
+</header>
+
+<section class="resumen">
+  <div class="kpi"><b id="kActivos">–</b><span>trenes activos</span></div>
+  <div class="kpi ok"><b id="kPuntuales">–</b><span>puntuales (≤5 min)</span></div>
+  <div class="kpi aviso"><b id="kRetraso">–</b><span>retraso 6–15 min</span></div>
+  <div class="kpi mal"><b id="kGrave">–</b><span>retraso &gt;15 min</span></div>
+  <div class="kpi"><b id="kMedia">–</b><span>retraso medio</span></div>
+</section>
+
+<nav class="pestanas">
+  <button data-vista="panel" class="activa">🕒 Panel de estación</button>
+  <button data-vista="lista">📋 Todos los trenes</button>
+  <button data-vista="mapa">🗺️ Mapa</button>
+  <button data-vista="incidencias">⚠️ Incidencias <span id="nInc" class="badge"></span></button>
+</nav>
+
+<main>
+  <section id="v-panel" class="vista activa">
+    <div class="filtros">
+      <label>Estación <select id="selEstacion"></select></label>
+    </div>
+    <div class="tablero">
+      <div class="tablero-cab"><span id="tabNombre">—</span><span id="tabReloj"></span></div>
+      <table>
+        <thead><tr><th>Hora</th><th>Tren</th><th>Destino</th><th>Procedencia</th><th>Estado</th></tr></thead>
+        <tbody id="tabFilas"></tbody>
+      </table>
+      <p class="nota">Trenes cuya próxima parada es esta estación, con la hora prevista de llegada que publica Renfe.</p>
+    </div>
+  </section>
+
+  <section id="v-lista" class="vista">
+    <div class="filtros">
+      <input id="buscar" type="search" placeholder="Buscar nº de tren, línea o estación…">
+      <select id="filTipo"><option value="">Todos</option><option value="LD">Larga y media distancia</option><option value="CER">Cercanías</option></select>
+      <select id="filRetraso"><option value="0">Cualquier retraso</option><option value="6">≥ 6 min</option><option value="16">&gt; 15 min</option></select>
+      <select id="orden"><option value="retraso">Ordenar: más retraso</option><option value="numero">Ordenar: nº de tren</option></select>
+    </div>
+    <div class="tabla-scroll">
+      <table class="lista">
+        <thead><tr><th></th><th>Tren</th><th>Recorrido</th><th>Próxima parada</th><th>Llegada</th><th>Retraso</th></tr></thead>
+        <tbody id="listaFilas"></tbody>
+      </table>
+    </div>
+    <p id="listaCuenta" class="nota"></p>
+  </section>
+
+  <section id="v-mapa" class="vista">
+    <div id="mapa"></div>
+    <div class="leyenda"><i class="p0"></i>Puntual <i class="p1"></i>1–5 min <i class="p2"></i>6–15 min <i class="p3"></i>&gt;15 min <i class="pn"></i>Sin dato</div>
+  </section>
+
+  <section id="v-incidencias" class="vista">
+    <h2>Avisos oficiales de Renfe</h2>
+    <div id="alertas"></div>
+    <h2>Trenes con retraso grave (&gt;15 min)</h2>
+    <div id="graves"></div>
+    <h2>Retraso por tipo de tren</h2>
+    <div id="porTipo"></div>
+  </section>
+</main>
+
+<div id="detalle" class="modal" hidden><div class="caja"><button class="cerrar" aria-label="Cerrar">×</button><div id="detalleCuerpo"></div></div></div>
+
+<footer>
+  Datos abiertos de Renfe (data.renfe.com), se actualizan cada 30 s. Aplicación informativa, no oficial:
+  no sustituye a los sistemas de seguridad ferroviaria ni a la información de Renfe/Adif.
+</footer>
+
+<script src="vendor/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
