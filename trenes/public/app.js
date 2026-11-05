@@ -78,7 +78,21 @@ function normalizarLD(datos) {
   }).filter(t => t.numero !== '?');
 }
 
-function normalizarCercanias(posiciones, retrasos) {
+// Núcleo de Cercanías según la provincia en la que está el tren
+const NUCLEOS = {
+  Madrid: 'Madrid', Guadalajara: 'Madrid', Toledo: 'Madrid', Segovia: 'Madrid',
+  Barcelona: 'Rodalies Catalunya', Girona: 'Rodalies Catalunya', Tarragona: 'Rodalies Catalunya', Lleida: 'Rodalies Catalunya',
+  'València': 'València', 'Castelló': 'València', 'Alacant/Alicante': 'Murcia/Alicante', Murcia: 'Murcia/Alicante',
+  Sevilla: 'Sevilla', 'Cádiz': 'Cádiz', 'Málaga': 'Málaga', Bizkaia: 'Bilbao', 'Araba/Álava': 'Bilbao',
+  Cantabria: 'Santander', Gipuzkoa: 'San Sebastián', Navarra: 'San Sebastián', Asturias: 'Asturias', Zaragoza: 'Zaragoza',
+};
+const PALETA = ['#4fb3ff', '#e5484d', '#30a46c', '#f5a623', '#8e4ec6', '#e93d82', '#12a594', '#ffb224', '#3e63dd', '#a18072', '#0090ff', '#d6409f'];
+function colorLinea(nucleo, linea) {
+  let h = 0; for (const c of `${nucleo}${linea}`) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return PALETA[h % PALETA.length];
+}
+
+function normalizarCercanias(posiciones, retrasos, info = {}) {
   const retrasoPorViaje = {};
   for (const e of retrasos?.entity || []) {
     const tu = e.tripUpdate; if (!tu) continue;
@@ -89,22 +103,25 @@ function normalizarCercanias(posiciones, retrasos) {
   return (posiciones?.entity || []).map(e => {
     const v = e.vehicle || {}, viaje = v.trip?.tripId || e.id;
     const etiqueta = v.vehicle?.label || '';
-    const [, linea = '', numero = ''] = etiqueta.match(/^([A-Z]\d+[a-z]?)-(\d+)/i) || [];
+    const [, lineaEtiqueta = '', numero = ''] = etiqueta.match(/^([A-Z]\d+[a-z]?)-(\d+)/i) || [];
+    const extra = info[viaje] || {};
+    const linea = extra.linea || lineaEtiqueta;
+    const lat = v.position?.latitude ?? null, lon = v.position?.longitude ?? null;
+    const prov = provinciaDe(lat, lon), nucleo = NUCLEOS[prov] || prov || 'Otros';
     return {
       id: 'CER-' + (viaje || etiqueta),
       tipo: 'CER',
       producto: 'Cercanías',
       numero: numero || v.vehicle?.id || viaje,
-      linea,
-      origen: '', destino: '',
+      linea, nucleo, color: extra.color || colorLinea(nucleo, linea),
+      origen: extra.origen || '', destino: extra.destino || '',
       anterior: '',
       codSiguiente: String(v.stopId ?? ''),
       siguiente: v.stopId ? nombre(v.stopId) : '—',
       enParada: v.currentStatus === 'STOPPED_AT',
-      horaSig: null,
+      horaSig: extra.horaSig ?? null,
       retraso: retrasoPorViaje[viaje] ?? null,
-      lat: v.position?.latitude ?? null,
-      lon: v.position?.longitude ?? null,
+      lat, lon,
       gps: true,
     };
   });
@@ -121,6 +138,9 @@ function normalizarAlertas(datos) {
 
 // ---------- Modo demo: trenes simulados para probar la app sin conexión a Renfe ----------
 
+// Número pseudoaleatorio uniforme entre 0 y 1, siempre el mismo para la misma semilla
+const aleatorio = x => { const v = Math.sin(x * 12.9898 + 78.233) * 43758.5453; return v - Math.floor(v); };
+
 function generarDemo() {
   const rutas = [['60000', '71801', 'AVE'], ['71801', '60000', 'AVE'], ['60000', '51003', 'AVE'], ['51003', '60000', 'AVE'],
     ['60000', '54413', 'AVE'], ['54413', '60000', 'AVLO'], ['60000', '03216', 'AVE'], ['03216', '60000', 'Alvia'],
@@ -136,7 +156,7 @@ function generarDemo() {
       const f = ((ahora / duracion) + k / 4 + i * 0.037) % 1;
       const A = ESTACIONES[o], B = ESTACIONES[d];
       const [lat, lon] = puntoEnRecorrido(recorrido(o, d), f);
-      const azar = Math.abs(Math.sin(semilla + Math.floor(ahora / 30)));
+      const azar = aleatorio(semilla + Math.floor(ahora / 30));
       const retraso = azar < 0.7 ? Math.floor(azar / 0.7 * 5) : azar < 0.92 ? 6 + Math.floor((azar - 0.7) / 0.22 * 10) : 16 + Math.floor((azar - 0.92) / 0.08 * 40);
       const fecha = new Date(); const minDia = fecha.getHours() * 60 + fecha.getMinutes();
       trenes.push({
@@ -147,10 +167,42 @@ function generarDemo() {
       });
     }
   });
+  trenes.push(...generarDemoCercanias(ahora));
   return {
     trenes,
     alertas: [{ titulo: 'DEMO · Incidencia en infraestructura entre Madrid y Toledo', texto: 'Datos de ejemplo: así se verán los avisos oficiales de Renfe.', lineas: ['Avant'] }],
   };
+}
+
+// Trenes de Cercanías simulados: cada línea con trenes cada 12 min en los dos sentidos, a unos 40 km/h de media
+function generarDemoCercanias(ahora) {
+  const trenes = [], fecha = new Date(), minDia = fecha.getHours() * 60 + fecha.getMinutes() + fecha.getSeconds() / 60;
+  let n = 0;
+  for (const [nucleo, lineas] of Object.entries(window.MAPA_ESPANA?.cercanias || {})) {
+    for (const [linea, { pts, km, paradas }] of Object.entries(lineas)) {
+      for (const [, nom, lon, lat] of paradas.map(p => [0, ...p])) ESTACIONES[`D-${nucleo}-${nom}`] = { n: nom, lat, lon };
+      const duracion = Math.max(20, km * 1.5), cada = 12, color = colorLinea(nucleo, linea);
+      for (const sentido of [1, -1]) {
+        for (let k = 0; k * cada < duracion; k++) {
+          const avance = (((ahora - k * cada) % duracion) + duracion) % duracion / duracion;
+          const f = sentido === 1 ? avance : 1 - avance;
+          const azar = aleatorio(++n * 7.13 + Math.floor(ahora / 20));
+          const retraso = azar < 0.75 ? Math.floor(azar / 0.75 * 3) : azar < 0.95 ? 4 + Math.floor((azar - 0.75) / 0.2 * 8) : 16 + Math.floor((azar - 0.95) / 0.05 * 20);
+          const delante = sentido === 1 ? paradas.find(p => p[3] > f) : [...paradas].reverse().find(p => p[3] < f);
+          const sig = delante || paradas[sentido === 1 ? paradas.length - 1 : 0];
+          const [origen, destino] = sentido === 1 ? [paradas[0][0], paradas.at(-1)[0]] : [paradas.at(-1)[0], paradas[0][0]];
+          const [la, lo] = puntoEnRecorrido(pts, f);
+          trenes.push({
+            id: `CER-D${n}`, tipo: 'CER', producto: 'Cercanías', numero: String(20000 + n * 37 % 9000), linea, nucleo, color,
+            origen, destino, anterior: '', codSiguiente: `D-${nucleo}-${sig[0]}`, siguiente: sig[0], enParada: false,
+            horaSig: Math.round(minDia + Math.abs(sig[3] - f) * duracion + retraso) % 1440,
+            retraso, lat: la, lon: lo, gps: true,
+          });
+        }
+      }
+    }
+  }
+  return trenes;
 }
 
 // Recorrido sobre las vías entre dos estaciones (de mapa-espana.js), o línea recta si no hay
@@ -174,17 +226,17 @@ function puntoEnRecorrido(pts, f) {
 // ---------- Carga ----------
 
 async function cargar() {
-  let ld = null, pos = null, ret = null, alertas = null, fuente = 'vivo';
+  let ld = null, pos = null, ret = null, cerInfo = {}, alertas = null, fuente = 'vivo';
   if (!new URLSearchParams(location.search).has('demo')) {
     try {
       const d = await pedir('api/trenes');
-      ({ ld, cerPosiciones: pos, cerRetrasos: ret } = d);
+      ({ ld, cerPosiciones: pos, cerRetrasos: ret, cerInfo } = d);
       alertas = await pedir('api/alertas').catch(() => null);
     } catch {
       [ld, pos, ret, alertas] = await Promise.all(Object.values(RENFE).map(u => pedir(u).catch(() => null)));
     }
   }
-  let trenes = [...(ld ? normalizarLD(ld) : []), ...(pos ? normalizarCercanias(pos, ret) : [])];
+  let trenes = [...(ld ? normalizarLD(ld) : []), ...(pos ? normalizarCercanias(pos, ret, cerInfo) : [])];
   let avisos = alertas ? normalizarAlertas(alertas) : [];
   if (!trenes.length) { ({ trenes, alertas: avisos } = generarDemo()); fuente = 'demo'; }
   Object.assign(estado, { trenes, alertas: avisos, fuente, actualizado: new Date() });
@@ -201,7 +253,9 @@ async function cargarEstaciones() {
 const claseRetraso = r => r == null ? 'n' : r <= 0 ? 0 : r <= 5 ? 1 : r <= 15 ? 2 : 3;
 const textoRetraso = r => r == null ? 'sin dato' : r <= 0 ? 'puntual' : `+${r} min`;
 const chipRetraso = r => `<span class="ret r${claseRetraso(r)}">${textoRetraso(r)}</span>`;
-const chipTipo = t => `<span class="tipo ${t.tipo === 'CER' ? 'cer' : ''}">${esc(t.tipo === 'CER' ? (t.linea || 'Cerc.') : t.producto)}</span>`;
+const chipTipo = t => t.tipo === 'CER'
+  ? `<span class="tipo cer" style="background:${esc(t.color || '#3a2140')}">${esc(t.linea || 'Cerc.')}</span>`
+  : `<span class="tipo">${esc(t.producto)}</span>`;
 
 function pintar() {
   const { trenes } = estado;
@@ -217,7 +271,7 @@ function pintar() {
   $('#hora').textContent = 'Actualizado ' + estado.actualizado.toLocaleTimeString('es-ES');
   const nInc = estado.alertas.length + trenes.filter(t => t.retraso > 15).length;
   $('#nInc').textContent = nInc || '';
-  pintarPanel(); pintarProvincia(); pintarLista(); pintarIncidencias(); pintarMapa();
+  pintarPanel(); pintarProvincia(); pintarCercanias(); pintarLista(); pintarIncidencias(); pintarMapa();
 }
 
 function pintarPanel() {
@@ -331,23 +385,23 @@ function crearMapa() {
     L.marker([e.lat, e.lon], { interactive: false, icon: L.divIcon({ className: 'ciudad', html: `<i></i><span>${esc(e.n.replace(/-.*/, ''))}</span>`, iconSize: [0, 0] }) }).addTo(mapa);
   }
   const calles = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18, attribution: '© OpenStreetMap · © CARTO' });
-  L.control.layers(null, { 'Calles (OpenStreetMap)': calles }, { position: 'topright' }).addTo(mapa);
+  capaLD = L.layerGroup().addTo(mapa); capaCER = L.layerGroup().addTo(mapa);
+  L.control.layers(null, { 'Larga y media distancia': capaLD, 'Cercanías': capaCER, 'Calles (OpenStreetMap)': calles }, { position: 'topright', collapsed: false }).addTo(mapa);
   mapa.attributionControl.addAttribution('Vías y límites: Natural Earth');
   zonaResaltada = L.layerGroup().addTo(mapa);
-  capa = L.layerGroup().addTo(mapa);
 }
 
-let mapa, capa, zonaResaltada;
+let mapa, capaLD, capaCER, zonaResaltada;
 function pintarMapa() {
   if (!window.L || !$('#v-mapa').classList.contains('activa')) return;
   if (!mapa) crearMapa();
-  capa.clearLayers();
+  capaLD.clearLayers(); capaCER.clearLayers();
   const colores = { 0: '#2fbf71', 1: '#a3d65c', 2: '#f5a623', 3: '#ef4b4b', n: '#8ea0b2' };
   for (const t of estado.trenes) {
     if (t.lat == null || t.lon == null || !t.gps) continue;
-    L.circleMarker(ajustarAVia(+t.lat, +t.lon), { radius: t.tipo === 'CER' ? 4 : 6.5, weight: 1.5, color: '#0b1118', fillColor: colores[claseRetraso(t.retraso)], fillOpacity: 1 })
+    L.circleMarker(ajustarAVia(+t.lat, +t.lon), { radius: t.tipo === 'CER' ? 4.5 : 6.5, weight: t.tipo === 'CER' ? 2 : 1.5, color: t.tipo === 'CER' ? t.color : '#0b1118', fillColor: colores[claseRetraso(t.retraso)], fillOpacity: 1 })
       .bindTooltip(`${t.tipo === 'CER' ? t.linea : t.producto} ${t.numero} · ${textoRetraso(t.retraso)}`)
-      .on('click', () => abrirDetalle(t.id)).addTo(capa);
+      .on('click', () => abrirDetalle(t.id)).addTo(t.tipo === 'CER' ? capaCER : capaLD);
   }
 }
 
@@ -471,6 +525,45 @@ function verProvinciaEnMapa() {
   }, 80);
 }
 
+// ---------- Cercanías ----------
+
+let lineaElegida = '';
+function pintarCercanias() {
+  const cer = estado.trenes.filter(t => t.tipo === 'CER');
+  const sel = $('#selNucleo');
+  const nucleos = {};
+  for (const t of cer) nucleos[t.nucleo] = (nucleos[t.nucleo] || 0) + 1;
+  const nombres = Object.keys(nucleos).sort((a, b) => nucleos[b] - nucleos[a]);
+  const actual = sel.value || leer('nucleo', '') || nombres[0];
+  sel.innerHTML = nombres.map(n => `<option value="${esc(n)}">${esc(n)} (${nucleos[n]})</option>`).join('');
+  if (nombres.includes(actual)) sel.value = actual;
+  const nucleo = sel.value;
+  const delNucleo = cer.filter(t => t.nucleo === nucleo);
+
+  const porLinea = {};
+  for (const t of delNucleo) (porLinea[t.linea || '?'] ||= []).push(t);
+  const lineas = Object.keys(porLinea).sort((a, b) => a.localeCompare(b, 'es', { numeric: true }));
+  if (lineaElegida && !lineas.includes(lineaElegida)) lineaElegida = '';
+  const media = ts => { const c = ts.filter(t => t.retraso != null); return c.length ? c.reduce((s, t) => s + Math.max(0, t.retraso), 0) / c.length : null; };
+  $('#lineasCer').innerHTML = `<button class="linea ${lineaElegida ? '' : 'activa'}" data-linea="">Todas <small>${delNucleo.length}</small></button>` +
+    lineas.map(l => { const m = media(porLinea[l]), c = claseRetraso(m == null ? null : Math.round(m));
+      return `<button class="linea ${lineaElegida === l ? 'activa' : ''}" data-linea="${esc(l)}" style="--c:${esc(porLinea[l][0].color)}">
+        <b>${esc(l)}</b><small>${porLinea[l].length} trenes</small><span class="ret r${c}">${m == null ? 'sin dato' : m < 0.5 ? 'puntual' : '+' + m.toFixed(1) + ' min'}</span></button>`; }).join('');
+
+  const lista = delNucleo.filter(t => !lineaElegida || t.linea === lineaElegida)
+    .sort((a, b) => a.linea.localeCompare(b.linea, 'es', { numeric: true }) || (minutosHasta(a.horaSig) ?? 1e9) - (minutosHasta(b.horaSig) ?? 1e9));
+  $('#cerTitulo').textContent = lineaElegida ? `Línea ${lineaElegida}` : `Todas las líneas de ${nucleo || 'Cercanías'}`;
+  $('#cerTrenes').innerHTML = lista.map(t => tarjeta(t, true)).join('') ||
+    '<p class="vacio">Renfe no está publicando ahora mismo trenes de Cercanías en circulación.</p>';
+}
+
+function verNucleoEnMapa() {
+  const ts = estado.trenes.filter(t => t.tipo === 'CER' && t.nucleo === $('#selNucleo').value && t.lat != null && (!lineaElegida || t.linea === lineaElegida));
+  if (!ts.length || !window.L) return;
+  document.querySelector('.pestanas button[data-vista="mapa"]').click();
+  setTimeout(() => { zonaResaltada.clearLayers(); mapa.fitBounds(ts.map(t => [t.lat, t.lon]), { padding: [40, 40], maxZoom: 11 }); }, 80);
+}
+
 // ---------- Eventos ----------
 
 document.querySelectorAll('.pestanas button').forEach(b => b.onclick = () => {
@@ -489,6 +582,9 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#detalle'
 $('#selProvincia').onchange = () => { guardar('provincia', $('#selProvincia').value); $('#selCiudad').value = ''; pintarProvincia(); };
 $('#selCiudad').onchange = pintarProvincia;
 $('#btnVerMapa').onclick = verProvinciaEnMapa;
+$('#selNucleo').onchange = () => { guardar('nucleo', $('#selNucleo').value); lineaElegida = ''; pintarCercanias(); };
+$('#lineasCer').onclick = e => { const b = e.target.closest('.linea'); if (b) { lineaElegida = b.dataset.linea; pintarCercanias(); } };
+$('#btnVerNucleo').onclick = verNucleoEnMapa;
 $('#btnUbicacion').onclick = () => {
   const b = $('#btnUbicacion');
   if (!navigator.geolocation) { b.textContent = 'Ubicación no disponible'; return; }
@@ -499,7 +595,7 @@ $('#btnUbicacion').onclick = () => {
     if (p) { $('#selProvincia').value = p; $('#selProvincia').onchange(); }
   }, () => { b.textContent = 'No se pudo obtener tu ubicación'; }, { timeout: 10000 });
 };
-setInterval(() => { if (estado.actualizado && $('#v-provincia').classList.contains('activa')) pintarProvincia(); }, 20000);
+setInterval(() => { if (!estado.actualizado) return; if ($('#v-provincia').classList.contains('activa')) pintarProvincia(); if ($('#v-cercanias').classList.contains('activa')) pintarCercanias(); }, 20000);
 setInterval(() => { $('#tabReloj').textContent = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }); }, 1000);
 
 document.querySelector(`.pestanas button[data-vista="${leer('vista', 'panel')}"]`)?.click();

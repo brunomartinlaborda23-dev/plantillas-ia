@@ -25,6 +25,10 @@ Para ver la interfaz con datos simulados: <http://localhost:8090/?demo>.
 - **Mi provincia**: eliges tu provincia (o pulsas "Usar mi ubicación") y, si quieres, una ciudad o estación.
   Ves los trenes que van a llegar allí con una cuenta atrás ("llega en 12 min") y la hora prevista, y los trenes que
   circulan ahora mismo por la provincia. "Ver en el mapa" te lleva al mapa con la provincia resaltada.
+- **Cercanías**: eliges el núcleo (Madrid, Rodalies Catalunya, València, Sevilla, Bilbao, Málaga, Asturias…) y ves
+  sus líneas (C1, C2, R2…) con cuántos trenes llevan y su retraso medio. Al tocar una línea ves solo sus trenes, con
+  origen, destino, próxima parada y cuánto les falta. En el mapa, los trenes de Cercanías llevan el borde del color
+  de su línea y se pueden mostrar u ocultar.
 - **Todos los trenes**: búsqueda por número, línea o estación; filtros por tipo (larga/media distancia o Cercanías)
   y por retraso.
 - **Mapa**: posición GPS de cada tren, con un color según el retraso (verde, lima, naranja, rojo).
@@ -41,6 +45,7 @@ Son datos abiertos de Renfe ([data.renfe.com](https://data.renfe.com)):
 | Larga y media distancia (posición, retraso, próxima parada) | `tiempo-real.largorecorrido.renfe.com/renfe-visor/flotaLD.json` |
 | Cercanías: posición | `gtfsrt.renfe.com/vehicle_positions.json` (GTFS-RT) |
 | Cercanías: retrasos | `gtfsrt.renfe.com/trip_updates.json` (GTFS-RT) |
+| Cercanías: línea, color, origen, destino y hora en cada parada | horario GTFS de Cercanías (`fomento_transit.zip`) |
 | Avisos | `gtfsrt.renfe.com/alerts.json` (GTFS-RT) |
 | Mapa, vías y provincias | Natural Earth (dominio público), generado con `tools/generar-mapa.py` |
 | Nombres de estaciones | `stops.txt` de los GTFS de Renfe (se descargan una vez al día) |
@@ -48,6 +53,13 @@ Son datos abiertos de Renfe ([data.renfe.com](https://data.renfe.com)):
 El navegador no puede pedir esos datos directamente (bloqueo CORS), por eso `server.mjs` hace de intermediario
 y guarda en caché las respuestas 15 segundos. Si el servidor no está, la web intenta pedirlos directamente a Renfe;
 si tampoco puede, pasa a **MODO DEMO**, y lo indica arriba en naranja.
+
+Para Cercanías, el servidor cruza cada tren en tiempo real con el horario oficial (GTFS) por su id de viaje
+o, si no coincide, por su número de tren. La hora de llegada que se muestra es la programada más el retraso
+que publica Renfe. El núcleo se deduce de la provincia en la que está el tren.
+
+Para probar el servidor con datos propios, cada fuente se puede sustituir con una variable de entorno, por ejemplo
+`FUENTE_cerPosiciones=http://localhost:8000/vp.json node server.mjs`.
 
 Los campos de Renfe no tienen documentación formal, así que la app acepta varios nombres posibles
 (`app.js`, funciones `normalizarLD` y `normalizarCercanias`). Si Renfe cambia el formato, el ajuste se hace ahí.

@@ -17,6 +17,8 @@ const FUENTES = {
   gtfsLD: 'https://ssl.renfe.com/gtransit/Fichero_AV_LD/google_transit.zip',
   gtfsCer: 'https://ssl.renfe.com/ftransit/Fichero_CER_FOMENTO/fomento_transit.zip',
 };
+// Para pruebas: FUENTE_ld=http://… sustituye una fuente
+for (const k in FUENTES) if (process.env['FUENTE_' + k]) FUENTES[k] = process.env['FUENTE_' + k];
 
 const cache = new Map();
 async function obtener(url, segundos, tipo = 'json') {
@@ -73,6 +75,66 @@ async function estaciones() {
   return res;
 }
 
+// Horario de Cercanías (GTFS): línea, color, origen, destino y hora programada en cada parada de cada viaje.
+// stop_times es grande, así que cada viaje se guarda como texto "parada:minutos;…" y se lee solo cuando hace falta.
+async function horarioCercanias() {
+  const c = cache.get('horarioCer');
+  if (c && Date.now() - c.t < 24 * 3600e3) return c.v;
+  const zip = await obtener(FUENTES.gtfsCer, 86400, 'bin');
+  const lineas = {};
+  for (const r of parsearCSV(leerDeZip(zip, 'routes.txt'))) lineas[r.route_id] = { n: r.route_short_name || r.route_long_name || '', color: r.route_color ? '#' + r.route_color : null };
+  const viajes = {}, porNumero = {};
+  for (const t of parsearCSV(leerDeZip(zip, 'trips.txt'))) {
+    viajes[t.trip_id] = { ruta: t.route_id, paradas: '' };
+    if (t.trip_short_name) porNumero[t.trip_short_name] = t.trip_id;
+  }
+  const texto = leerDeZip(zip, 'stop_times.txt');
+  let fin = texto.indexOf('\n');
+  const cab = texto.slice(0, fin).replace(/^\uFEFF/, '').trim().split(',').map(x => x.replace(/"/g, ''));
+  const [iT, iL, iP] = ['trip_id', 'arrival_time', 'stop_id'].map(k => cab.indexOf(k));
+  for (let ini = fin + 1; ini < texto.length; ini = fin + 1) {
+    fin = texto.indexOf('\n', ini); if (fin < 0) fin = texto.length;
+    const f = texto.slice(ini, fin).replace(/"/g, '').split(',');
+    const v = viajes[f[iT]]; if (!v) continue;
+    const [h, m] = f[iL].split(':');
+    v.paradas += `${f[iP].trim()}:${+h * 60 + +m};`;
+  }
+  const res = { lineas, viajes, porNumero };
+  cache.set('horarioCer', { t: Date.now(), v: res });
+  return res;
+}
+
+// Añade a cada tren de Cercanías los datos del horario (si Renfe usa el mismo id de viaje en tiempo real y en el GTFS)
+async function infoCercanias(posiciones, retrasos) {
+  if (!posiciones?.entity) return {};
+  let h;
+  try { h = await horarioCercanias(); } catch (e) { console.warn('Horario Cercanías:', e.message); return {}; }
+  const est = await estaciones();
+  const retraso = {};
+  for (const e of retrasos?.entity || []) {
+    const tu = e.tripUpdate; if (!tu) continue;
+    const seg = tu.delay ?? tu.stopTimeUpdate?.[0]?.arrival?.delay ?? tu.stopTimeUpdate?.[0]?.departure?.delay;
+    if (seg != null) retraso[tu.trip?.tripId] = Math.round(seg / 60);
+  }
+  const res = {};
+  for (const e of posiciones.entity) {
+    const v = e.vehicle; if (!v) continue;
+    const id = v.trip?.tripId;
+    const numero = (v.vehicle?.label || '').match(/^[A-Z]\d+[a-z]?-(\d+)/i)?.[1];
+    const viaje = h.viajes[id] || h.viajes[h.porNumero[numero]];
+    if (!viaje) continue;
+    const paradas = viaje.paradas.split(';').filter(Boolean).map(x => x.split(':'));
+    const linea = h.lineas[viaje.ruta] || {};
+    const programada = paradas.find(([p]) => p === String(v.stopId))?.[1];
+    res[id] = {
+      linea: linea.n, color: linea.color,
+      origen: est[paradas[0]?.[0]]?.n, destino: est[paradas.at(-1)?.[0]]?.n,
+      horaSig: programada == null ? null : (+programada + (retraso[id] ?? 0)) % 1440,
+    };
+  }
+  return res;
+}
+
 const TIPOS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
 
 http.createServer(async (req, res) => {
@@ -81,10 +143,12 @@ http.createServer(async (req, res) => {
   try {
     if (ruta === '/api/trenes') {
       const [ld, pos, ret] = await Promise.allSettled([obtener(FUENTES.ld, 15), obtener(FUENTES.cerPosiciones, 15), obtener(FUENTES.cerRetrasos, 15)]);
+      const cerPos = pos.status === 'fulfilled' ? pos.value : null, cerRet = ret.status === 'fulfilled' ? ret.value : null;
       return json(200, {
+        cerInfo: await infoCercanias(cerPos, cerRet).catch(() => ({})),
         ld: ld.status === 'fulfilled' ? ld.value : null,
-        cerPosiciones: pos.status === 'fulfilled' ? pos.value : null,
-        cerRetrasos: ret.status === 'fulfilled' ? ret.value : null,
+        cerPosiciones: cerPos,
+        cerRetrasos: cerRet,
         errores: [ld, pos, ret].filter(x => x.status === 'rejected').map(x => x.reason.message),
       });
     }

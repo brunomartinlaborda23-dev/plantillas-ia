@@ -121,8 +121,60 @@ for o, d in RUTAS:
     else:
         print(f'{o}-{d}: sin camino, se usará línea recta')
 
+# Líneas de Cercanías para el modo demo: paradas (nombre, lon, lat) por orden; se trazan por la vía
+CERCANIAS = {
+    'Madrid': {
+        'C2': [('Guadalajara', -3.1786, 40.6441), ('Alcalá de Henares', -3.3667, 40.4893), ('Atocha', -3.6908, 40.4066), ('Chamartín', -3.6827, 40.4722)],
+        'C3': [('Aranjuez', -3.6006, 40.0337), ('Pinto', -3.6987, 40.2423), ('Atocha', -3.6908, 40.4066), ('Sol', -3.7038, 40.4169)],
+        'C4': [('Parla', -3.7680, 40.2370), ('Getafe Centro', -3.7319, 40.3080), ('Atocha', -3.6908, 40.4066), ('Alcobendas', -3.6380, 40.5370)],
+        'C5': [('Móstoles', -3.8640, 40.3220), ('Fuenlabrada', -3.7960, 40.2840), ('Atocha', -3.6908, 40.4066), ('Humanes', -3.8270, 40.2520)],
+        'C10': [('Villalba', -4.0050, 40.6360), ('Pozuelo', -3.8120, 40.4350), ('Príncipe Pío', -3.7200, 40.4210), ('Atocha', -3.6908, 40.4066)],
+    },
+    'Rodalies Catalunya': {
+        'R1': [('L\'Hospitalet', 2.1000, 41.3600), ('Barcelona-Sants', 2.1403, 41.3791), ('Badalona', 2.2450, 41.4500), ('Mataró', 2.4440, 41.5370)],
+        'R2': [('Castelldefels', 1.9760, 41.2800), ('Barcelona-Sants', 2.1403, 41.3791), ('Montcada', 2.1790, 41.4900), ('Granollers', 2.2870, 41.6080)],
+        'R4': [('Sant Vicenç de Calders', 1.5340, 41.1880), ('Barcelona-Sants', 2.1403, 41.3791), ('Terrassa', 2.0130, 41.5620), ('Manresa', 1.8260, 41.7250)],
+    },
+    'València': {
+        'C1': [('València Nord', -0.3770, 39.4660), ('Silla', -0.4120, 39.3630), ('Cullera', -0.2540, 39.1660), ('Gandia', -0.1800, 38.9700)],
+        'C2': [('València Nord', -0.3770, 39.4660), ('Alzira', -0.4370, 39.1520), ('Xàtiva', -0.5190, 38.9900)],
+        'C6': [('València Nord', -0.3770, 39.4660), ('Sagunt', -0.2690, 39.6780), ('Castelló', -0.0510, 39.9870)],
+    },
+    'Sevilla': {
+        'C1': [('Lora del Río', -5.5310, 37.6560), ('Santa Justa', -5.9754, 37.3917), ('Dos Hermanas', -5.9230, 37.2830), ('Utrera', -5.7790, 37.1830)],
+    },
+    'Bilbao': {
+        'C1': [('Abando', -2.9277, 43.2603), ('Barakaldo', -2.9890, 43.2970), ('Santurtzi', -3.0320, 43.3290)],
+        'C3': [('Abando', -2.9277, 43.2603), ('Llodio', -2.9630, 43.1430), ('Orduña', -3.0100, 42.9930)],
+    },
+    'Málaga': {
+        'C1': [('Málaga Centro', -4.4280, 36.7150), ('Aeropuerto', -4.4910, 36.6740), ('Torremolinos', -4.4990, 36.6250), ('Fuengirola', -4.6250, 36.5400)],
+    },
+    'Asturias': {
+        'C1': [('Gijón', -5.6630, 43.5380), ('Oviedo', -5.8540, 43.3670), ('Mieres', -5.7720, 43.2510)],
+    },
+}
+cercanias = {}
+for nucleo, lineas_n in CERCANIAS.items():
+    for linea, paradas in lineas_n.items():
+        pts = [paradas[0][1:]]
+        for (_, *a), (_, *b) in zip(paradas, paradas[1:]):
+            c = camino(cercano(*a), cercano(*b))
+            recta = km(a, b)
+            if c and sum(km(p, q) for p, q in zip(c, c[1:])) < 3 * recta + 5: pts += [list(p) for p in c]
+            pts.append(b)
+        largo = [0]
+        for p, q in zip(pts, pts[1:]): largo.append(largo[-1] + km(p, q))
+        fracs, k = [], 0
+        for n, lon, lat in paradas:  # fracción del recorrido en la que está cada parada
+            k = min(range(k, len(pts)), key=lambda i: km(pts[i], (lon, lat)))
+            fracs.append(round(largo[k] / largo[-1], 4))
+        cercanias.setdefault(nucleo, {})[linea] = {'pts': r3(simplificar(pts, 0.001)), 'km': round(largo[-1]),
+                                                   'paradas': [[n, lon, lat, f] for (n, lon, lat), f in zip(paradas, fracs)]}
+        print(f'Cercanías {nucleo} {linea}: {largo[-1]:.0f} km')
+
 vias = [r3(simplificar(v, 0.002)) for v in vias]
-datos = {'paises': paises, 'provincias': provincias, 'vias': vias, 'recorridos': recorridos}
+datos = {'paises': paises, 'provincias': provincias, 'vias': vias, 'recorridos': recorridos, 'cercanias': cercanias}
 SALIDA.write_text('// Generado por tools/generar-mapa.py con datos de Natural Earth (dominio público).\n'
                   'window.MAPA_ESPANA = ' + json.dumps(datos, separators=(',', ':')) + ';\n')
 print(SALIDA, f'{SALIDA.stat().st_size / 1024:.0f} KB', len(vias), 'tramos de vía')

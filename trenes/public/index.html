@@ -26,6 +26,7 @@
 <nav class="pestanas">
   <button data-vista="panel" class="activa">🕒 Panel de estación</button>
   <button data-vista="provincia">📍 Mi provincia</button>
+  <button data-vista="cercanias">🚇 Cercanías</button>
   <button data-vista="lista">📋 Todos los trenes</button>
   <button data-vista="mapa">🗺️ Mapa</button>
   <button data-vista="incidencias">⚠️ Incidencias <span id="nInc" class="badge"></span></button>
@@ -63,6 +64,17 @@
     <h2>Circulando ahora por <span id="pNombre"></span></h2>
     <div id="pCirculando" class="tarjetas"></div>
     <p class="nota">"Llega en" se calcula con la hora prevista que publica Renfe para la próxima parada de cada tren.</p>
+  </section>
+
+  <section id="v-cercanias" class="vista">
+    <div class="filtros">
+      <label>Núcleo <select id="selNucleo"></select></label>
+      <button id="btnVerNucleo" class="boton-sec">🗺️ Ver en el mapa</button>
+    </div>
+    <div id="lineasCer" class="lineas"></div>
+    <h2 id="cerTitulo"></h2>
+    <div id="cerTrenes" class="tarjetas"></div>
+    <p class="nota">Toca una línea para ver solo sus trenes. El color de cada línea identifica la línea, el del retraso va aparte.</p>
   </section>
 
   <section id="v-lista" class="vista">

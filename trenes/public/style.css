@@ -75,3 +75,11 @@ footer{color:var(--suave);font-size:12px;padding:14px 16px 28px;text-align:cente
 .info{display:flex;flex-direction:column;gap:3px;min-width:0}
 @media (max-width:720px){.resumen.mini{grid-template-columns:repeat(3,1fr)}.resumen.mini .kpi:first-child{grid-column:auto}
   .resumen.mini b{font-size:20px}.tarjetas{grid-template-columns:1fr}}
+.tipo.cer{color:#fff;text-shadow:0 0 2px #0006}
+.lineas{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.linea{display:flex;flex-direction:column;align-items:flex-start;gap:3px;background:var(--fondo);color:var(--texto);border:1px solid var(--borde);
+  border-left:5px solid var(--c,var(--acento));border-radius:10px;padding:8px 12px;font:inherit;cursor:pointer;min-width:96px}
+.linea b{font-size:17px}.linea small{color:var(--suave);font-size:11px}.linea .ret{min-width:0;font-size:12px}
+.linea.activa{border-color:var(--c,var(--acento));background:#1c2a38;box-shadow:0 0 0 1px var(--c,var(--acento))}
+.leaflet-control-layers{background:var(--panel);color:var(--texto);border:1px solid var(--borde)!important}
+.leaflet-control-layers label{color:var(--texto)}
