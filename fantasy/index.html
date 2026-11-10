@@ -134,7 +134,14 @@ tr.me td { background: color-mix(in srgb, var(--card) 14%, transparent); }
 .chip.lock { background: var(--card); color: var(--card-ink); border-color: var(--card); }
 .pts { font-family: var(--f-display); font-weight: 800; font-size: 20px; }
 .pts.neg { color: var(--bad); }
-@media (max-width: 560px) { .hide-sm { display: none; } }
+@media (max-width: 560px) { .hide-sm { display: none; } .tablebox .who .ovr + .av { display: none; } .trend { white-space: normal; } }
+.saves-count { font-family: var(--f-display); font-weight: 800; font-size: 96px; line-height: 1; text-align: center; }
+.saves-big { font-size: 22px; padding: 22px; font-family: var(--f-display); text-transform: uppercase; letter-spacing: .04em; }
+.ovr { flex: 0 0 auto; min-width: 30px; text-align: center; font-family: var(--f-display); font-weight: 800; font-size: 17px; line-height: 1; padding: 5px 4px 4px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink); font-variant-numeric: tabular-nums; }
+.ovr.silver { background: color-mix(in srgb, var(--muted) 22%, var(--surface)); }
+.ovr.gold { background: var(--card); color: var(--card-ink); border-color: var(--card); }
+.ovr.low { color: var(--bad); }
+.slot .ovr { position: absolute; transform: translate(-26px, -18px); font-size: 14px; min-width: 26px; padding: 3px; z-index: 1; }
 .trend { font-size: 11px; font-weight: 700; white-space: nowrap; }
 .trend.up { color: var(--good); }
 .trend.down { color: var(--bad); }
@@ -210,7 +217,8 @@ const FORMATOS = {
   f11: { label: "Fútbol 11 (1-4-4-2)",   slots: { POR: 1, DEF: 4, MED: 4, DEL: 2 } },
 };
 const DEFAULT_CFG = { name: "Liga Fantasy Colmenar Viejo", club: "Colmenar Viejo Cadete D", formato: "f11", budget: 30 };
-const VALUE_PER_POINT = 0.1; // cada punto por encima de 3 en una jornada sube 100.000 € el valor
+const MEDIA_INICIAL = 50; // todos empiezan con media 50; cada jornada jugada la media cambia (puntos − 3)
+const PRICE_STEP = 1.04;  // cada punto de media hace que el jugador valga un 4 % más
 
 const S = {
   db: null, user: null, assets: null, uid: null, owner: false, canWrite: null,
@@ -241,14 +249,15 @@ function breakdown(p, md) {
   const r = POS[p.pos] || POS.MED; const gf = +md.gf, ga = +md.ga;
   out.push(["Jugó", 2]);
   if (gf > ga) out.push(["Victoria", 1]);
+  if (gf < ga) out.push(["Derrota", -1]);
   if (s.goals) out.push([`${s.goals} gol${s.goals > 1 ? "es" : ""}`, s.goals * r.gol]);
   if (s.assists) out.push([`${s.assists} asistencia${s.assists > 1 ? "s" : ""}`, s.assists * 3]);
   if (ga === 0 && r.cero) out.push(["Portería a cero", r.cero]);
   if (r.encaja && ga >= 2) out.push([`${ga} goles encajados`, -Math.floor(ga / 2)]);
   if (s.saves && p.pos === "POR") out.push([`${s.saves} paradas`, Math.floor(s.saves / 3)]);
   if (s.mvp) out.push(["MVP del partido", 3]);
-  if (s.yellow) out.push([`${s.yellow} amarilla${s.yellow > 1 ? "s" : ""}`, -s.yellow]);
-  if (s.red) out.push(["Roja", -3]);
+  if (s.yellow) out.push([`${s.yellow} amarilla${s.yellow > 1 ? "s" : ""}`, -2 * s.yellow]);
+  if (s.red) out.push(["Roja", -4]);
   if (s.og) out.push([`${s.og} en propia`, -2 * s.og]);
   if (s.penMiss) out.push([`${s.penMiss} penalti fallado`, -2 * s.penMiss]);
   if (+s.bonus) out.push(["Bonus del míster", +s.bonus]);
@@ -258,20 +267,29 @@ const playerPts = (p, md) => breakdown(p, md).reduce((a, [, v]) => a + v, 0);
 const mdList = () => Object.values(S.mds).sort((a, b) => (a.number || 0) - (b.number || 0));
 const scoredMds = () => mdList().filter(hasResult);
 const seasonPts = (p) => scoredMds().reduce((a, md) => a + playerPts(p, md), 0);
-function mdDelta(p, md) {
+function mediaDelta(p, md) {
   if (!md?.stats?.[p.id]?.played || !hasResult(md)) return 0;
-  return Math.round((playerPts(p, md) - 3) * VALUE_PER_POINT * 10) / 10;
+  return Math.max(-8, Math.min(10, playerPts(p, md) - 3));
 }
-function priceOf(p) {
-  if (!p) return 0; let v = +p.price || 0;
-  for (const md of scoredMds()) v = Math.max(0.5, v + mdDelta(p, md));
-  return Math.round(v * 10) / 10;
+function mediaOf(p, uptoMd) {
+  if (!p) return MEDIA_INICIAL; let m = Number.isFinite(+p.media) && p.media !== "" && p.media != null ? +p.media : MEDIA_INICIAL;
+  for (const md of scoredMds()) { if (uptoMd && md.id === uptoMd) break; m = Math.max(1, Math.min(99, m + mediaDelta(p, md))); }
+  return m;
 }
-function lastDelta(p) { const md = scoredMds().filter((m) => m.stats?.[p.id]?.played).slice(-1)[0]; return md ? mdDelta(p, md) : null; }
+function price50() { return +S.cfg?.price50 || defaultPrice(); }
+function priceForMedia(m) { return Math.max(0.3, Math.round(price50() * Math.pow(PRICE_STEP, m - 50) * 10) / 10); }
+function priceOf(p) { return p ? priceForMedia(mediaOf(p)) : 0; }
+function lastMove(p) {
+  const md = scoredMds().filter((m) => m.stats?.[p.id]?.played).slice(-1)[0]; if (!md) return null;
+  const before = mediaOf(p, md.id); const after = Math.max(1, Math.min(99, before + mediaDelta(p, md)));
+  return { media: after - before, price: Math.round((priceForMedia(after) - priceForMedia(before)) * 10) / 10 };
+}
 function trend(p) {
-  const d = lastDelta(p); if (d === null || d === 0) return "";
-  return `<span class="trend ${d > 0 ? "up" : "down"}">${d > 0 ? "▲" : "▼"} ${money(Math.abs(d))}</span>`;
+  const d = lastMove(p); if (!d || (d.media === 0 && d.price === 0)) return "";
+  const up = d.media > 0;
+  return `<span class="trend ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(d.media)} media · ${up ? "+" : "−"}${money(Math.abs(d.price))}</span>`;
 }
+function ovr(p) { const m = mediaOf(p); return `<span class="ovr ${m >= 70 ? "gold" : m >= 55 ? "silver" : m < 45 ? "low" : ""}" title="Media">${m}</span>`; }
 function lineupFor(md, uid) { return md?.lineups?.[uid] || null; }
 function managerMdPts(md, uid) {
   const lu = lineupFor(md, uid); if (!lu || !hasResult(md)) return null;
@@ -329,7 +347,7 @@ function avatar(p, size) {
   return `<span class="av"${st}>${esc(p?.dorsal || initials(p?.name))}</span>`;
 }
 function who(p, extra = "") {
-  return `<div class="who">${avatar(p)}<div style="min-width:0"><b>${esc(p.name)}</b><small><span class="pos ${esc(p.pos)}">${esc(p.pos)}</span> ${p.dorsal && p.photo ? "· " + esc(p.dorsal) : ""} ${extra}</small></div></div>`;
+  return `<div class="who">${S.players[p.id] ? ovr(p) : ""}${avatar(p)}<div style="min-width:0"><b>${esc(p.name)}</b><small><span class="pos ${esc(p.pos)}">${esc(p.pos)}</span> ${p.dorsal && p.photo ? "· " + esc(p.dorsal) : ""} ${extra}</small></div></div>`;
 }
 function ptsEl(v) { return `<span class="pts num ${v < 0 ? "neg" : ""}">${v}</span>`; }
 function resultChip(md) {
@@ -383,15 +401,16 @@ function viewLobby() {
     ${joinForm()}</section>
     <section class="section"><div class="row spread"><h2>Apuntados</h2><span class="eyebrow">${n} · ${count}</span></div>${signupList()}</section>`;
   if (S.owner) {
-    const a = S.adminCfg ||= { ...c, startPrice: "" };
-    const sp = a.startPrice === "" ? defaultPriceFor(+a.budget || 30, a.formato) : +a.startPrice;
+    const a = S.adminCfg ||= { ...c, startMedia: "" };
+    const sp = defaultPriceFor(+a.budget || 30, a.formato); const sm = +a.startMedia || MEDIA_INICIAL;
+    const spm = Math.round(sp * Math.pow(PRICE_STEP, sm - 50) * 10) / 10;
     html += `<section class="section"><h2>Crear la liga</h2><div class="panel section"><div class="fields">
       <div class="field"><label for="ac-name">Nombre de la liga</label><input id="ac-name" data-bind="adminCfg.name" value="${esc(a.name)}"></div>
       <div class="field"><label for="ac-club">Equipo</label><input id="ac-club" data-bind="adminCfg.club" value="${esc(a.club)}"></div>
       <div class="field"><label for="ac-formato">Formato</label><select id="ac-formato" data-bind="adminCfg.formato">${Object.entries(FORMATOS).map(([k, f]) => `<option value="${k}" ${a.formato === k ? "selected" : ""}>${f.label}</option>`).join("")}</select></div>
       <div class="field"><label for="ac-budget">Dinero por mánager (M)</label><input id="ac-budget" type="number" min="5" data-bind="adminCfg.budget" value="${esc(a.budget)}"></div>
-      <div class="field"><label for="ac-start">Precio inicial de cada jugador (M)</label><input id="ac-start" type="number" min="0.5" step="0.5" data-bind="adminCfg.startPrice" placeholder="${sp}" value="${esc(a.startPrice)}"></div></div>
-      <p class="muted" style="margin:0;font-size:13px">Todos empiezan valiendo lo mismo y el mercado los irá separando según puntúen. Si alguien se apunta tarde, lo podrás añadir desde Admin.</p>
+      <div class="field"><label for="ac-start">Media inicial de todos</label><input id="ac-start" type="number" min="1" max="99" data-bind="adminCfg.startMedia" placeholder="${MEDIA_INICIAL}" value="${esc(a.startMedia)}"></div></div>
+      <p class="muted" style="margin:0;font-size:13px">Todos empiezan con media ${sm}, que vale ${money(spm)}. Cada partido la media sube o baja según los puntos y con ella el precio. Si alguien se apunta tarde, lo podrás añadir desde Admin.</p>
       <div class="row"><button class="btn primary" data-act="league-start" ${n ? "" : "disabled"}>Crear la liga con ${n} jugador${n === 1 ? "" : "es"}</button></div></div></section>`;
   } else html += `<div class="note">Cuando estéis todos, el administrador creará la liga y aquí se abrirá el mercado.</div>`;
   return html;
@@ -430,7 +449,7 @@ function viewHome() {
 function fmtDate(d) { if (!d) return "Fecha por decidir"; try { return new Date(d + "T12:00:00").toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" }); } catch { return d; } }
 
 function myTeam() { return S.uid ? S.teams[S.uid] : null; }
-function teamMoves(t) { return t?.moves || (t?.players || []).map((pid) => ({ t: "buy", pid, price: +S.players[pid]?.price || 0 })); }
+function teamMoves(t) { return t?.moves || (t?.players || []).map((pid) => ({ t: "buy", pid, price: priceOf(S.players[pid]) })); }
 function cashOf(moves) { return Math.round((cfg().budget - moves.reduce((a, m) => a + (m.t === "buy" ? +m.price : -m.price), 0)) * 10) / 10; }
 function teamValue(ids) { return ids.reduce((a, id) => a + priceOf(S.players[id]), 0); }
 function ensureDraft() {
@@ -473,7 +492,7 @@ function viewTeam() {
     html += `<div class="line">`;
     for (let i = 0; i < sl[pos]; i++) {
       const p = S.players[ids[i]];
-      if (p) html += `<button class="slot" data-act="slot-player" data-id="${esc(p.id)}" aria-label="${esc(p.name)}, opciones"><span class="avwrap">${avatar(p)}${d.captain === p.id ? `<span class="cap" title="Capitán">C</span>` : ""}</span><span class="tag">${esc(p.name)}</span><span class="price num">${money(priceOf(p))}</span></button>`;
+      if (p) html += `<button class="slot" data-act="slot-player" data-id="${esc(p.id)}" aria-label="${esc(p.name)}, opciones"><span class="avwrap">${ovr(p)}${avatar(p)}${d.captain === p.id ? `<span class="cap" title="Capitán">C</span>` : ""}</span><span class="tag">${esc(p.name)}</span><span class="price num">${money(priceOf(p))}</span></button>`;
       else html += `<button class="slot empty" data-act="slot-pick" data-pos="${pos}" aria-label="Elegir ${POS[pos].n.toLowerCase()}"><span class="avwrap"><span class="av">+</span></span><span class="tag">${pos}</span></button>`;
     }
     html += `</div>`;
@@ -505,12 +524,12 @@ function viewMarket() {
   if (S.marketPos !== "ALL") ps = ps.filter((p) => p.pos === S.marketPos);
   const rows = ps.map((p) => ({ p, pts: seasonPts(p), own: ownership(p.id), pj: scoredMds().filter((md) => md.stats?.[p.id]?.played).length }));
   const key = S.marketSort;
-  rows.sort((a, b) => key === "price" ? priceOf(b.p) - priceOf(a.p) : key === "own" ? b.own - a.own : key === "name" ? a.p.name.localeCompare(b.p.name) : b.pts - a.pts);
+  rows.sort((a, b) => key === "price" ? priceOf(b.p) - priceOf(a.p) : key === "media" ? mediaOf(b.p) - mediaOf(a.p) : key === "own" ? b.own - a.own : key === "name" ? a.p.name.localeCompare(b.p.name) : b.pts - a.pts);
   const mine = new Set(myTeam()?.players || []);
   return `<section class="section"><div class="row spread"><h2>Mercado</h2>
     <div class="row"><div class="seg" role="group" aria-label="Posición">${["ALL", ...POS_ORDER].map((k) => `<button data-act="market-pos" data-v="${k}" aria-pressed="${S.marketPos === k}">${k === "ALL" ? "Todos" : k}</button>`).join("")}</div>
-    <div class="field"><select id="market-sort" aria-label="Ordenar" data-act-change="market-sort"><option value="pts" ${key === "pts" ? "selected" : ""}>Más puntos</option><option value="price" ${key === "price" ? "selected" : ""}>Más valor</option><option value="own" ${key === "own" ? "selected" : ""}>Más fichados</option><option value="name" ${key === "name" ? "selected" : ""}>Nombre</option></select></div></div></div>
-    <div class="tablebox"><table><thead><tr><th>Jugador</th><th class="r hide-sm">PJ</th><th class="r hide-sm">Media</th><th class="r hide-sm">Fichado</th><th class="r">Valor</th><th class="r">Puntos</th></tr></thead><tbody>
+    <div class="field"><select id="market-sort" aria-label="Ordenar" data-act-change="market-sort"><option value="pts" ${key === "pts" ? "selected" : ""}>Más puntos</option><option value="media" ${key === "media" ? "selected" : ""}>Mejor media</option><option value="price" ${key === "price" ? "selected" : ""}>Más valor</option><option value="own" ${key === "own" ? "selected" : ""}>Más fichados</option><option value="name" ${key === "name" ? "selected" : ""}>Nombre</option></select></div></div></div>
+    <div class="tablebox"><table><thead><tr><th>Jugador</th><th class="r hide-sm">PJ</th><th class="r hide-sm">Pts/PJ</th><th class="r hide-sm">Fichado</th><th class="r">Valor</th><th class="r">Puntos</th></tr></thead><tbody>
     ${rows.map((r) => `<tr class="clickable" data-act="show-player" data-id="${esc(r.p.id)}"><td>${who(r.p, r.p.id === S.uid ? "· eres tú" : mine.has(r.p.id) ? "· en tu equipo" : "")}</td><td class="r num hide-sm">${r.pj}</td><td class="r num hide-sm">${r.pj ? (r.pts / r.pj).toFixed(1).replace(".", ",") : "–"}</td><td class="r num hide-sm">${r.own}%</td><td class="r num">${money(priceOf(r.p))}<br>${trend(r.p)}</td><td class="r">${ptsEl(r.pts)}</td></tr>`).join("")}
     </tbody></table></div></section>`;
 }
@@ -539,12 +558,13 @@ function statLine(s) {
 }
 
 function viewRules() {
-  const rows = [["Jugar el partido", "+2"], ["Victoria del equipo (si jugó)", "+1"], ["Gol de portero o defensa", "+6"], ["Gol de centrocampista", "+5"], ["Gol de delantero", "+4"], ["Asistencia", "+3"], ["Portería a cero (POR, DEF)", "+4"], ["Portería a cero (MED)", "+1"], ["Cada 3 paradas (POR)", "+1"], ["MVP del partido", "+3"], ["Cada 2 goles encajados (POR, DEF)", "−1"], ["Tarjeta amarilla", "−1"], ["Tarjeta roja", "−3"], ["Gol en propia puerta", "−2"], ["Penalti fallado", "−2"], ["Bonus del míster", "a criterio"], ["Capitán", "×2"]];
+  const rows = [["Jugar el partido", "+2"], ["Victoria del equipo (si jugó)", "+1"], ["Derrota del equipo (si jugó)", "−1"], ["Gol de portero o defensa", "+6"], ["Gol de centrocampista", "+5"], ["Gol de delantero", "+4"], ["Asistencia", "+3"], ["Portería a cero (POR, DEF)", "+4"], ["Portería a cero (MED)", "+1"], ["Cada 3 paradas (POR)", "+1"], ["MVP del partido", "+3"], ["Cada 2 goles encajados (POR, DEF)", "−1"], ["Tarjeta amarilla", "−2"], ["Tarjeta roja", "−4"], ["Gol en propia puerta", "−2"], ["Penalti fallado", "−2"], ["Bonus del míster", "a criterio"], ["Capitán", "×2"]];
   const c = cfg(); const f = FORMATOS[c.formato] || FORMATOS.f7;
   return `<div class="grid2"><section class="section"><h2>Cómo se puntúa</h2><div class="panel rules">${rows.map(([a, b]) => `<span>${a}</span><span>${b}</span>`).join("")}</div></section>
     <section class="section"><h2>Cómo se juega</h2><div class="panel section" style="gap:10px">
       <p style="margin:0">Cada mánager empieza con <b>${money(c.budget)}</b> para fichar hasta ${totalSlots()} compañeros en formato ${esc(f.label)}. Un mismo jugador puede estar en varios equipos fantasy.</p>
-      <p style="margin:0"><b>Valor de mercado:</b> después de cada partido, cada punto por encima de 3 sube el valor del jugador 100.000 €, y cada punto por debajo lo baja (nunca de 0,5 M). Si vendes, cobras lo que valga en ese momento.</p>
+      <p style="margin:0"><b>Media:</b> todos empezáis con ${+S.cfg?.startMedia || MEDIA_INICIAL}. Después de cada partido que juegues, tu media cambia lo que hayas puntuado menos 3: con 8 puntos sube 5, con 1 punto baja 2 (como mucho +10 o −8 por partido, entre 1 y 99). Si no juegas, no cambia.</p>
+      <p style="margin:0"><b>Valor de mercado:</b> cada punto de media hace que valgas un 4 % más. Con media 50 vales ${money(price50())}, con 60 unos ${money(priceForMedia(60))} y con 70 unos ${money(priceForMedia(70))}. Las tarjetas y las derrotas restan puntos, así que también bajan tu media y tu precio. Si vendes a alguien, cobras lo que valga en ese momento.</p>
       <p style="margin:0">Antes de cada partido el administrador <b>cierra las alineaciones</b>: lo que tengas guardado en ese momento es lo que puntúa esa jornada.</p>
       <p style="margin:0">Después del partido mete el resultado y las estadísticas de cada uno, y la clasificación se actualiza sola para todos.</p>
       <p style="margin:0">Solo puntúan los que juegan. Si alguien no va al partido, saca 0.</p></div></section></div>`;
@@ -555,7 +575,7 @@ function viewAdmin() {
   if (!S.owner) return `<div class="empty"><h3>Solo para el administrador</h3><p class="muted">El dueño de la liga gestiona jugadores, jornadas y estadísticas.</p></div>`;
   const c = cfg();
   const ps = Object.values(S.players).sort((a, b) => POS_ORDER.indexOf(a.pos) - POS_ORDER.indexOf(b.pos) || a.name.localeCompare(b.name));
-  const np = S.newPlayer ||= { name: "", pos: "MED", dorsal: "", price: "" };
+  const np = S.newPlayer ||= { name: "", pos: "MED", dorsal: "", media: "" };
   const S2 = S.adminCfg ||= { ...c };
   let html = `<section class="section"><h2>Jornadas</h2>
     <div class="panel row" style="align-items:end">
@@ -564,15 +584,15 @@ function viewAdmin() {
       <button class="btn primary" data-act="md-create">Crear jornada ${mdList().length + 1}</button></div>
     ${mdList().reverse().map(mdEditor).join("")}</section>`;
   const pend = Object.values(S.signups).filter((x) => !S.players[x.id]).sort(bySquad);
-  if (pend.length) html += `<section class="section"><div class="row spread"><h2>Apuntados nuevos</h2><button class="btn primary" data-act="signups-add">Añadir ${pend.length} al mercado a ${money(defaultPrice())}</button></div><div class="tablebox"><table><tbody>${pend.map((x) => `<tr><td>${who({ ...x, photo: null })}</td><td class="r"><button class="btn small danger" data-act="signup-remove" data-id="${esc(x.id)}">${S.confirmDel === x.id ? "¿Seguro?" : "Quitar"}</button></td></tr>`).join("")}</tbody></table></div></section>`;
+  if (pend.length) html += `<section class="section"><div class="row spread"><h2>Apuntados nuevos</h2><button class="btn primary" data-act="signups-add">Añadir ${pend.length} al mercado con media ${+S.cfg?.startMedia || MEDIA_INICIAL}</button></div><div class="tablebox"><table><tbody>${pend.map((x) => `<tr><td>${who({ ...x, photo: null })}</td><td class="r"><button class="btn small danger" data-act="signup-remove" data-id="${esc(x.id)}">${S.confirmDel === x.id ? "¿Seguro?" : "Quitar"}</button></td></tr>`).join("")}</tbody></table></div></section>`;
   html += `<section class="section"><div class="row spread"><h2>Plantilla</h2><span class="muted">${ps.length} jugadores</span></div>
     <div class="panel row" style="align-items:end">
       <div class="field" style="flex:2 1 160px"><label for="np-name">Nombre</label><input id="np-name" data-bind="newPlayer.name" value="${esc(np.name)}"></div>
       <div class="field" style="flex:1 1 100px"><label for="np-pos">Posición</label><select id="np-pos" data-bind="newPlayer.pos">${POS_ORDER.map((k) => `<option ${np.pos === k ? "selected" : ""}>${k}</option>`).join("")}</select></div>
       <div class="field" style="flex:1 1 70px"><label for="np-dorsal">Dorsal</label><input id="np-dorsal" data-bind="newPlayer.dorsal" value="${esc(np.dorsal)}"></div>
-      <div class="field" style="flex:1 1 80px"><label for="np-price">Precio (M)</label><input id="np-price" type="number" step="0.5" min="0" data-bind="newPlayer.price" value="${esc(np.price)}" placeholder="${defaultPrice()}"></div>
+      <div class="field" style="flex:1 1 80px"><label for="np-media">Media</label><input id="np-media" type="number" min="1" max="99" data-bind="newPlayer.media" value="${esc(np.media)}" placeholder="${+S.cfg?.startMedia || MEDIA_INICIAL}"></div>
       <button class="btn primary" data-act="player-add">Añadir</button></div>
-    ${ps.length ? `<div class="tablebox"><table><thead><tr><th>Jugador</th><th class="r">Precio</th><th class="r">Puntos</th><th></th></tr></thead><tbody>${ps.map((p) => `<tr><td>${who(p)}</td><td class="r num">${money(priceOf(p))}<br><small class="muted">salida ${money(p.price)}</small></td><td class="r num">${seasonPts(p)}</td><td class="r"><button class="btn small" data-act="player-edit" data-id="${esc(p.id)}">Editar</button></td></tr>`).join("")}</tbody></table></div>` : ""}</section>`;
+    ${ps.length ? `<div class="tablebox"><table><thead><tr><th>Jugador</th><th class="r">Valor</th><th class="r">Puntos</th><th></th></tr></thead><tbody>${ps.map((p) => `<tr><td>${who(p)}</td><td class="r num">${money(priceOf(p))}<br><small class="muted">empezó con ${esc(p.media ?? MEDIA_INICIAL)}</small></td><td class="r num">${seasonPts(p)}</td><td class="r"><button class="btn small" data-act="player-edit" data-id="${esc(p.id)}">Editar</button></td></tr>`).join("")}</tbody></table></div>` : ""}</section>`;
   html += `<section class="section"><h2>Ajustes de la liga</h2><div class="panel section"><div class="fields">
       <div class="field"><label for="ac-name">Nombre de la liga</label><input id="ac-name" data-bind="adminCfg.name" value="${esc(S2.name)}"></div>
       <div class="field"><label for="ac-club">Vuestro equipo</label><input id="ac-club" data-bind="adminCfg.club" value="${esc(S2.club)}"></div>
@@ -588,11 +608,11 @@ function defaultPrice() { const c = cfg(); return defaultPriceFor(c.budget, c.fo
 
 function matchappBlock(md) {
   const st = S.importState?.[md.id];
-  if (!S.sample) return `<div class="note">Para leer el acta de Matchapp automáticamente, abre la página en la app de Claude o en el navegador con tu cuenta. Mientras tanto, mete los datos a mano.</div>`;
+  if (!S.sample) return `<div class="note">Para leer el acta de Matchapp automáticamente, abre la página en la app de Claude o en el navegador con tu cuenta. Mientras tanto, mete los datos a mano. Las paradas se cuentan con el botón "Contar" al lado del portero mientras veis el vídeo.</div>`;
   return `<div class="panel section" style="gap:8px;background:var(--surface-2)"><div class="row spread"><div><b>Acta de Matchapp</b><br><small class="muted">Sube una o varias capturas del acta del partido (alineación, goles, tarjetas) y se rellena la tabla. Revisa y pulsa Guardar.</small></div>
     <label class="btn ${st?.busy ? "" : "primary"}" for="mx-${esc(md.id)}">${st?.busy ? "Leyendo…" : "Subir capturas"}</label><input id="mx-${esc(md.id)}" data-matchapp="${esc(md.id)}" type="file" accept="${esc(S.sampleLim.mediaTypes.join(","))}" multiple hidden ${st?.busy ? "disabled" : ""}></div>
     ${st?.msg ? `<div class="note ${st.warn ? "warn" : ""}">${esc(st.msg)}</div>` : ""}
-    <small class="muted">Las paradas del portero no salen en el acta: mételas a mano en la columna "Par" después de ver el vídeo.</small></div>`;
+    <small class="muted">Las paradas no salen en el acta. Mientras veis el vídeo, pulsa "Contar" al lado del portero y toca +1 en cada parada.</small></div>`;
 }
 async function importMatchapp(mid, files) {
   const lim = S.sampleLim; const md = S.mds[mid]; const d = S.mdDraft[mid];
@@ -649,7 +669,7 @@ function mdEditor(md) {
       </div>
       ${matchappBlock(md)}
       <div class="tablebox stats"><table><thead><tr><th>Jugador</th><th title="Jugó">Jugó</th><th title="Goles">Gol</th><th title="Asistencias">Asis</th><th title="Paradas (porteros)">Par</th><th title="Amarillas">Am</th><th title="Roja">Roja</th><th title="Goles en propia">PP</th><th title="Penaltis fallados">PF</th><th title="MVP">MVP</th><th title="Bonus del míster (puede ser negativo)">Bonus</th><th class="r">Pts</th></tr></thead><tbody>
-      ${ps.map((p) => `<tr><td>${esc(p.name)} <span class="pos ${esc(p.pos)}">${esc(p.pos)}</span></td><td>${ck(p.id, "played")}</td><td>${n(p.id, "goals")}</td><td>${n(p.id, "assists")}</td><td>${p.pos === "POR" ? n(p.id, "saves", 60) : ""}</td><td>${n(p.id, "yellow", 2)}</td><td>${ck(p.id, "red")}</td><td>${n(p.id, "og", 5)}</td><td>${n(p.id, "penMiss", 5)}</td><td>${ck(p.id, "mvp")}</td><td><input type="number" min="-10" max="10" aria-label="bonus" data-stat="${esc(md.id)}|${esc(p.id)}|bonus" value="${esc(d.stats[p.id]?.bonus || "")}"></td><td class="r num">${playerPts(p, { ...d, stats: d.stats })}</td></tr>`).join("")}
+      ${ps.map((p) => `<tr><td>${esc(p.name)} <span class="pos ${esc(p.pos)}">${esc(p.pos)}</span></td><td>${ck(p.id, "played")}</td><td>${n(p.id, "goals")}</td><td>${n(p.id, "assists")}</td><td>${p.pos === "POR" ? `<div class="row" style="gap:4px;flex-wrap:nowrap">${n(p.id, "saves", 60)}<button class="btn small" data-act="saves-open" data-md="${esc(md.id)}" data-id="${esc(p.id)}" title="Contador de paradas para usar mientras ves el vídeo">Contar</button></div>` : ""}</td><td>${n(p.id, "yellow", 2)}</td><td>${ck(p.id, "red")}</td><td>${n(p.id, "og", 5)}</td><td>${n(p.id, "penMiss", 5)}</td><td>${ck(p.id, "mvp")}</td><td><input type="number" min="-10" max="10" aria-label="bonus" data-stat="${esc(md.id)}|${esc(p.id)}|bonus" value="${esc(d.stats[p.id]?.bonus || "")}"></td><td class="r num">${playerPts(p, { ...d, stats: d.stats })}</td></tr>`).join("")}
       </tbody></table></div>
       <div class="row spread">
         <div class="row">${md.lineups ? `<span class="chip lock">Alineaciones cerradas · ${Object.keys(md.lineups).length} equipos</span><button class="btn small" data-act="md-unlock" data-id="${esc(md.id)}">Reabrir</button>` : `<button class="btn" data-act="md-lock" data-id="${esc(md.id)}">Cerrar alineaciones</button>`}
@@ -675,21 +695,32 @@ function renderModal() {
   } else if (m.type === "player") {
     const p = S.players[m.id]; if (!p) { S.modal = null; root.replaceChildren(); return; }
     const hist = scoredMds().filter((md) => md.stats?.[p.id]?.played).reverse();
-    inner = `<div class="row spread"><div class="who">${avatar(p, 64)}<div><h3>${esc(p.name)}</h3><small class="muted"><span class="pos ${esc(p.pos)}">${esc(p.pos)}</span> ${esc(POS[p.pos]?.n || "")} ${p.dorsal ? "· dorsal " + esc(p.dorsal) : ""}</small></div></div><div style="text-align:right"><span class="pts num">${seasonPts(p)}</span><br><small class="muted">${money(priceOf(p))} ${trend(p)} · ${ownership(p.id)}% lo tienen</small></div></div>
-      ${hist.length ? `<div class="list">${hist.map((md) => `<div class="item"><div><b>J${esc(md.number)} vs ${esc(md.rival || "")}</b><br><small class="muted">${breakdown(p, md).map(([l, v]) => `${esc(l)} ${v > 0 ? "+" : ""}${v}`).join(" · ")} · valor ${mdDelta(p, md) >= 0 ? "+" : "−"}${money(Math.abs(mdDelta(p, md)))}</small></div>${ptsEl(playerPts(p, md))}</div>`).join("")}</div>` : `<p class="muted">Todavía no ha jugado ninguna jornada con resultado.</p>`}`;
+    inner = `<div class="row spread"><div class="who">${avatar(p, 64)}<div><h3>${esc(p.name)}</h3><small class="muted"><span class="pos ${esc(p.pos)}">${esc(p.pos)}</span> ${esc(POS[p.pos]?.n || "")} ${p.dorsal ? "· dorsal " + esc(p.dorsal) : ""}</small></div></div><div style="text-align:right">${ovr(p)}<br><small class="muted">media</small></div></div>
+      <div class="budget"><div><span class="eyebrow">Puntos</span><b class="num">${seasonPts(p)}</b></div><div><span class="eyebrow">Valor</span><b class="num">${money(priceOf(p))}</b></div><div><span class="eyebrow">Lo tienen</span><b class="num">${ownership(p.id)}%</b></div></div>
+      ${trend(p) ? `<div>Último partido: ${trend(p)}</div>` : ""}
+      ${hist.length ? `<div class="list">${hist.map((md) => `<div class="item"><div><b>J${esc(md.number)} vs ${esc(md.rival || "")}</b><br><small class="muted">${breakdown(p, md).map(([l, v]) => `${esc(l)} ${v > 0 ? "+" : ""}${v}`).join(" · ")} · media ${mediaDelta(p, md) >= 0 ? "+" : "−"}${Math.abs(mediaDelta(p, md))}</small></div>${ptsEl(playerPts(p, md))}</div>`).join("")}</div>` : `<p class="muted">Todavía no ha jugado ninguna jornada con resultado.</p>`}`;
   } else if (m.type === "team" || m.type === "mdteam") {
     const t = S.teams[m.id]; const md = m.md ? S.mds[m.md] : null;
     const lu = md ? lineupFor(md, m.id) : t; const ids = lu?.players || [];
     inner = `<div class="row spread"><div><div class="eyebrow">${md ? `J${esc(md.number)} vs ${esc(md.rival || "")}` : esc(managerName(m.id))}</div><h3>${esc(t?.name || "Equipo")}</h3></div><span class="pts num">${md ? managerMdPts(md, m.id) : managerTotal(m.id)}</span></div>
       <div class="list">${ids.map((id) => S.players[id] || (lu.snap?.[id] && { ...lu.snap[id], id })).filter(Boolean).sort((a, b) => POS_ORDER.indexOf(a.pos) - POS_ORDER.indexOf(b.pos)).map((p) => { const cap = lu.captain === p.id; const v = md ? playerPts(p, md) * (cap ? 2 : 1) : seasonPts(p); return `<div class="item">${who(p, cap ? "· Capitán" : "")}${ptsEl(v)}</div>`; }).join("")}</div>
       ${!md ? `<p class="muted" style="margin:0;font-size:13px">Alineación actual · valor del equipo ${money(teamValue(ids.filter((id) => S.players[id])))} · caja ${money(cashOf(teamMoves(t)))}. Los puntos de cada jugador son de toda la temporada.</p>` : ""}`;
+  } else if (m.type === "saves") {
+    const p = S.players[m.id]; const d = S.mdDraft[m.md]; const md = S.mds[m.md];
+    const v = +d?.stats?.[m.id]?.saves || 0;
+    inner = `<div><div class="eyebrow">Jornada ${esc(md?.number)} · vs ${esc(d?.rival || md?.rival || "")}</div><h3>Paradas de ${esc(p?.name)}</h3></div>
+      <p class="muted" style="margin:0;font-size:14px">Pon el vídeo en la tele o en otra pantalla y toca el botón grande en cada parada. Cuenta como parada un tiro a puerta que para el portero, no los que van fuera.</p>
+      <div class="saves-count num" aria-live="polite">${v}</div>
+      <button class="btn primary saves-big" data-act="saves-inc" data-v="1">+1 parada</button>
+      <div class="row"><button class="btn" data-act="saves-inc" data-v="-1" ${v ? "" : "disabled"}>Quitar una</button><span class="muted" style="font-size:13px">Suma ${Math.floor(v / 3)} punto${Math.floor(v / 3) === 1 ? "" : "s"} (1 cada 3 paradas). Al terminar, cierra y pulsa "Guardar jornada".</span></div>`;
   } else if (m.type === "edit") {
     const e = m.draft;
     inner = `<h3>Editar jugador</h3><div class="row">${avatar(e, 64)}${S.assets ? `<label class="btn small" for="ed-photo">Subir foto</label><input id="ed-photo" type="file" accept="image/*" hidden>${e.photo ? `<button class="btn small" data-act="edit-nophoto">Quitar foto</button>` : ""}` : `<span class="muted" style="font-size:13px">Las fotos se pueden subir siendo editor de la página.</span>`}</div>
       <div class="fields"><div class="field"><label for="ed-name">Nombre</label><input id="ed-name" data-bind="modal.draft.name" value="${esc(e.name)}"></div>
       <div class="field"><label for="ed-pos">Posición</label><select id="ed-pos" data-bind="modal.draft.pos">${POS_ORDER.map((k) => `<option ${e.pos === k ? "selected" : ""}>${k}</option>`).join("")}</select></div>
       <div class="field"><label for="ed-dorsal">Dorsal</label><input id="ed-dorsal" data-bind="modal.draft.dorsal" value="${esc(e.dorsal)}"></div>
-      <div class="field"><label for="ed-price">Precio de salida (M)</label><input id="ed-price" type="number" step="0.5" min="0" data-bind="modal.draft.price" value="${esc(e.price)}"></div></div>
+      <div class="field"><label for="ed-media">Media inicial</label><input id="ed-media" type="number" min="1" max="99" data-bind="modal.draft.media" value="${esc(e.media ?? MEDIA_INICIAL)}"></div></div>
+      <p class="muted" style="margin:0;font-size:13px">La media de ahora (${mediaOf(S.players[e.id])}) es la inicial más lo que ha ganado o perdido en cada partido.</p>
       <div class="row spread"><button class="btn danger" data-act="player-delete" data-id="${esc(e.id)}">${S.confirmDel === e.id ? "Pulsa otra vez para borrar" : "Borrar jugador"}</button><button class="btn primary" data-act="player-save">Guardar</button></div>`;
   }
   root.innerHTML = `<div class="overlay" data-act="close-modal"><div class="sheet" role="dialog" aria-modal="true">${inner}<button class="btn" data-act="close-modal">Cerrar</button></div></div>`;
@@ -724,23 +755,23 @@ const actions = {
   },
   "league-start": () => {
     const a = S.adminCfg; const budget = Math.max(5, +a.budget || 30);
-    const price = a.startPrice === "" || !(+a.startPrice > 0) ? defaultPriceFor(budget, a.formato) : +a.startPrice;
+    const media = Math.max(1, Math.min(99, Math.round(+a.startMedia || MEDIA_INICIAL))); const p50 = defaultPriceFor(budget, a.formato);
     const su = Object.values(S.signups);
     write(async () => {
-      for (const x of su) if (!S.players[x.id]) await S.db.doc("players/" + x.id).set({ name: x.name, pos: x.pos, dorsal: x.dorsal, price });
-      const { startPrice, ...rest } = a;
-      await S.db.doc("league/config").set({ ...(S.cfg || {}), ...rest, name: (a.name || "Liga Fantasy").slice(0, 50), club: (a.club || "").slice(0, 50), budget, started: true, startedAt: new Date().toISOString() });
+      for (const x of su) if (!S.players[x.id]) await S.db.doc("players/" + x.id).set({ name: x.name, pos: x.pos, dorsal: x.dorsal, media });
+      const { startMedia, ...rest } = a;
+      await S.db.doc("league/config").set({ ...(S.cfg || {}), ...rest, name: (a.name || "Liga Fantasy").slice(0, 50), club: (a.club || "").slice(0, 50), budget, price50: p50, startMedia: media, started: true, startedAt: new Date().toISOString() });
       S.adminCfg = null; location.hash = "equipo";
     }, `Liga creada: ${su.length} jugadores en el mercado`);
   },
   "signups-add": () => {
-    const pend = Object.values(S.signups).filter((x) => !S.players[x.id]); const price = defaultPrice();
-    write(async () => { for (const x of pend) await S.db.doc("players/" + x.id).set({ name: x.name, pos: x.pos, dorsal: x.dorsal, price }); }, `${pend.length} añadidos al mercado`);
+    const pend = Object.values(S.signups).filter((x) => !S.players[x.id]); const media = +S.cfg?.startMedia || MEDIA_INICIAL;
+    write(async () => { for (const x of pend) await S.db.doc("players/" + x.id).set({ name: x.name, pos: x.pos, dorsal: x.dorsal, media }); }, `${pend.length} añadidos al mercado`);
   },
   "show-player": (el) => { S.modal = { type: "player", id: el.dataset.id }; renderModal(); },
   "show-team": (el) => { S.modal = { type: "team", id: el.dataset.id }; renderModal(); },
   "show-md-team": (el) => { S.modal = { type: "mdteam", id: el.dataset.id, md: el.dataset.md }; renderModal(); },
-  "close-modal": (el, ev) => { if (ev.target !== el) return; S.modal = null; S.confirmDel = null; renderModal(); },
+  "close-modal": (el, ev) => { if (ev.target !== el) return; const was = S.modal?.type; S.modal = null; S.confirmDel = null; if (was === "saves") render(); else renderModal(); },
   "slot-pick": (el) => { S.modal = { type: "pick", pos: el.dataset.pos }; renderModal(); },
   "slot-player": (el) => { S.modal = { type: "slot", id: el.dataset.id }; renderModal(); },
   pick: (el) => { const d = ensureDraft(); draftBuy(d, el.dataset.id); if (!d.captain) d.captain = el.dataset.id; d.dirty = true; S.modal = null; render(); },
@@ -780,14 +811,20 @@ const actions = {
   },
   "player-add": () => {
     const np = S.newPlayer; if (!np.name.trim()) { toast("Escribe el nombre del jugador"); return; }
-    write(async () => { await S.db.doc("players/" + rid("p")).set({ name: np.name.trim().slice(0, 40), pos: np.pos, dorsal: String(np.dorsal || "").slice(0, 3), price: np.price === "" ? defaultPrice() : +np.price }); S.newPlayer = { name: "", pos: np.pos, dorsal: "", price: "" }; }, `${np.name.trim()} añadido`);
+    write(async () => { await S.db.doc("players/" + rid("p")).set({ name: np.name.trim().slice(0, 40), pos: np.pos, dorsal: String(np.dorsal || "").slice(0, 3), media: Math.max(1, Math.min(99, Math.round(+np.media || +S.cfg?.startMedia || MEDIA_INICIAL))) }); S.newPlayer = { name: "", pos: np.pos, dorsal: "", media: "" }; }, `${np.name.trim()} añadido`);
+  },
+  "saves-open": (el) => { S.modal = { type: "saves", md: el.dataset.md, id: el.dataset.id }; renderModal(); },
+  "saves-inc": (el) => {
+    const m = S.modal; const d = S.mdDraft[m.md]; const st = d.stats[m.id] ||= {};
+    st.saves = Math.max(0, Math.min(60, (+st.saves || 0) + +el.dataset.v)); if (st.saves) st.played = true;
+    renderModal();
   },
   "player-edit": (el) => { S.confirmDel = null; S.modal = { type: "edit", draft: { ...S.players[el.dataset.id] } }; renderModal(); },
   "edit-nophoto": () => { S.modal.draft.photo = null; renderModal(); },
   "player-save": () => {
     const e = S.modal.draft; if (!e.name?.trim()) { toast("El nombre no puede quedar vacío"); return; }
     const { id, ...rest } = e;
-    write(async () => { await S.db.doc("players/" + id).set({ ...rest, name: e.name.trim().slice(0, 40), price: +e.price || 0, dorsal: String(e.dorsal || "").slice(0, 3), photo: e.photo || null }); S.modal = null; }, "Jugador guardado");
+    write(async () => { await S.db.doc("players/" + id).set({ ...rest, name: e.name.trim().slice(0, 40), media: Math.max(1, Math.min(99, Math.round(+e.media || MEDIA_INICIAL))), dorsal: String(e.dorsal || "").slice(0, 3), photo: e.photo || null }); S.modal = null; }, "Jugador guardado");
   },
   "player-delete": (el) => {
     if (S.confirmDel !== el.dataset.id) { S.confirmDel = el.dataset.id; renderModal(); return; }
@@ -795,7 +832,7 @@ const actions = {
   },
   "cfg-save": () => {
     const a = S.adminCfg;
-    write(async () => { const { startPrice, ...rest } = a; await S.db.doc("league/config").set({ ...(S.cfg || {}), ...rest, name: (a.name || "Liga Fantasy").slice(0, 50), club: (a.club || "").slice(0, 50), formato: a.formato, budget: Math.max(5, +a.budget || 30) }); S.adminCfg = null; }, "Ajustes guardados");
+    write(async () => { const { startMedia: _sm, startPrice: _sp, ...rest } = a; await S.db.doc("league/config").set({ ...(S.cfg || {}), ...rest, name: (a.name || "Liga Fantasy").slice(0, 50), club: (a.club || "").slice(0, 50), formato: a.formato, budget: Math.max(5, +a.budget || 30) }); S.adminCfg = null; }, "Ajustes guardados");
   },
 };
 
@@ -806,7 +843,7 @@ document.addEventListener("click", (ev) => {
   fn(el, ev);
 });
 document.addEventListener("keydown", (ev) => {
-  if (ev.key === "Escape" && S.modal) { S.modal = null; renderModal(); }
+  if (ev.key === "Escape" && S.modal) { const was = S.modal.type; S.modal = null; if (was === "saves") render(); else renderModal(); }
   if ((ev.key === "Enter" || ev.key === " ") && ev.target.matches?.('[role="button"][data-act]')) { ev.preventDefault(); ev.target.click(); }
 });
 function setPath(path, value) {
