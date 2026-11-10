@@ -77,32 +77,65 @@ class VozClonada:
         self.ref = referencia
         self.m = ChatterboxMultilingualTTS.from_pretrained(device="cpu")
 
+    def _norm(self, p):
+        import re, unicodedata
+        p = unicodedata.normalize("NFD", p.lower())
+        return re.sub(r"[^a-z0-9ñ]", "", "".join(c for c in p if unicodedata.category(c) != "Mn"))
+
+    def _revisar(self, ruta, texto):
+        """Transcribe la frase con Whisper: devuelve (parecido 0-1, segundo donde acaba la última palabra buena)."""
+        import difflib
+        if not hasattr(self, "asr"):
+            from faster_whisper import WhisperModel
+            self.asr = WhisperModel("small", device="cpu", compute_type="int8")
+        segs, _ = self.asr.transcribe(ruta, language="es", word_timestamps=True)
+        palabras = [w for s in segs for w in s.words]
+        # los números pueden salir en cifras ("40 mil") o en letras: no se comparan
+        nums = {"uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez",
+                "dieciseis", "veinte", "treinta", "cuarenta", "cincuenta", "cien", "mil", "y"}
+        a = [x for x in (self._norm(w) for w in texto.split()) if x and x not in nums]
+        b = [x for x in (self._norm(w.word) for w in palabras) if x and not x.isdigit() and x not in nums]
+        palabras = [w for w in palabras if (lambda x: x and not x.isdigit() and x not in nums)(self._norm(w.word))]
+        sm = difflib.SequenceMatcher(None, a, b, autojunk=False)
+        bloques = [m for m in sm.get_matching_blocks() if m.size]
+        fin = palabras[bloques[-1].b + bloques[-1].size - 1].end if bloques else None
+        return sm.ratio(), fin, " ".join(w.word.strip() for w in palabras)
+
     def decir(self, texto, ruta):
-        import torch
-        esperado = len(texto) / 14.0          # ~14 caracteres por segundo hablando
+        import torch, librosa
         mejor = None
-        for intento in range(4):
+        for intento in range(6):
             torch.manual_seed(7 + intento)
             wav = self.m.generate(texto, language_id="es", audio_prompt_path=self.ref,
                                   exaggeration=CLON_EXAGERACION, cfg_weight=CLON_CFG)
-            d = wav.shape[-1] / self.m.sr
-            err = abs(d / esperado - 1.0)
-            if mejor is None or err < mejor[0]:
-                mejor = (err, wav)
-            if 0.65 < d / esperado < 1.6:       # duración razonable: ni cortada ni con huecos
+            y = wav.squeeze(0).cpu().numpy()
+            habla, _ = librosa.effects.trim(y, top_db=35)
+            vel = len(texto.replace(" ", "")) / (len(habla) / self.m.sr)
+            tempo = min(1.45, max(1.0, CLON_LETRAS_SEG / vel))
+            tmp, cand = ruta + ".tmp.wav", ruta + f".c{intento}.wav"
+            sf.write(tmp, y, self.m.sr)
+            # ritmo y tono + pausas internas largas recortadas a ~0,25 s
+            subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", tmp, "-af",
+                            f"rubberband=tempo={tempo:.3f}:pitch={CLON_TONO}:formant=preserved:pitchq=quality,"
+                            "silenceremove=stop_periods=-1:stop_duration=0.3:stop_threshold=-42dB:stop_silence=0.25",
+                            cand], check=True)
+            os.remove(tmp)
+            parecido, fin, oido = self._revisar(cand, texto)
+            if mejor is None or parecido > mejor[0]:
+                mejor = (parecido, fin, cand)
+            if parecido >= 0.9:
                 break
-            print(f"   reintento ({d:.1f}s, esperado ~{esperado:.1f}s)")
-        import librosa
-        y = mejor[1].squeeze(0).cpu().numpy()
-        habla, _ = librosa.effects.trim(y, top_db=35)
-        vel = len(texto.replace(" ", "")) / (len(habla) / self.m.sr)
-        tempo = min(1.45, max(1.0, CLON_LETRAS_SEG / vel))
-        tmp = ruta + ".tmp.wav"
-        sf.write(tmp, y, self.m.sr)
-        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", tmp, "-af",
-                        f"rubberband=tempo={tempo:.3f}:pitch={CLON_TONO}:formant=preserved:pitchq=quality", ruta],
-                       check=True)
-        os.remove(tmp)
+            print(f"   reintento (parecido {parecido:.2f}): «{oido}»")
+        parecido, fin, cand = mejor
+        # cortar lo que sobre después de la última palabra correcta
+        corte = ["-t", f"{fin + 0.12:.3f}"] if fin else []
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", cand, *corte,
+                        "-af", "areverse,afade=t=in:d=0.06,areverse", ruta], check=True)
+        for f in os.listdir(os.path.dirname(ruta)):
+            if f.startswith(os.path.basename(ruta) + ".c"):
+                os.remove(os.path.join(os.path.dirname(ruta), f))
+        if parecido < 0.9:
+            print(f"   AVISO: mejor intento con parecido {parecido:.2f}")
 
 
 # Solo un toque de cuerpo y presencia; sin cambiar el tono para que suene humana
