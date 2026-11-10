@@ -51,9 +51,12 @@ GUION = [
 ]
 BOOM_SILENCIO = 0.45   # pausa entre "que ocurre" y la explosión
 
-# Expresividad del clon (0.5 = neutro, más alto = más emoción y énfasis)
-CLON_EXAGERACION = 0.55
-CLON_CFG = 0.5
+# Estilo "narrador de TikTok" para el clon (medido en vídeos virales del género):
+# ~185 palabras/min, pausas cortas, entonación expresiva y voz algo grave.
+CLON_EXAGERACION = 0.8     # 0.5 = neutro; más alto = más energía y énfasis
+CLON_CFG = 0.3             # más bajo = ritmo más vivo
+CLON_LETRAS_SEG = 15.5     # velocidad objetivo al hablar
+CLON_TONO = 0.93           # 1.0 = tu tono; 0.93 ≈ 1,3 semitonos más grave
 
 
 class VozKokoro:
@@ -89,7 +92,17 @@ class VozClonada:
             if 0.65 < d / esperado < 1.6:       # duración razonable: ni cortada ni con huecos
                 break
             print(f"   reintento ({d:.1f}s, esperado ~{esperado:.1f}s)")
-        sf.write(ruta, mejor[1].squeeze(0).cpu().numpy(), self.m.sr)
+        import librosa
+        y = mejor[1].squeeze(0).cpu().numpy()
+        habla, _ = librosa.effects.trim(y, top_db=35)
+        vel = len(texto.replace(" ", "")) / (len(habla) / self.m.sr)
+        tempo = min(1.45, max(1.0, CLON_LETRAS_SEG / vel))
+        tmp = ruta + ".tmp.wav"
+        sf.write(tmp, y, self.m.sr)
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", tmp, "-af",
+                        f"rubberband=tempo={tempo:.3f}:pitch={CLON_TONO}:formant=preserved:pitchq=quality", ruta],
+                       check=True)
+        os.remove(tmp)
 
 
 # Solo un toque de cuerpo y presencia; sin cambiar el tono para que suene humana
@@ -149,6 +162,7 @@ def main(tts):
 
 if __name__ == "__main__":
     if sys.argv[1] == "--clon":
+        PAUSA_FRASE, PAUSA_ESCENA, MIN_RATIO = 0.18, 0.35, 0.92   # ritmo TikTok, vídeo > 60 s
         main(VozClonada(sys.argv[2]))
     else:
         main(VozKokoro(sys.argv[1]))
