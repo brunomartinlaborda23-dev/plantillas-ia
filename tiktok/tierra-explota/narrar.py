@@ -1,14 +1,20 @@
 """Genera la narración (voz masculina) y la línea de tiempo del vídeo.
 
-Uso:  python3 narrar.py RUTA/es_ES-davefx-medium.onnx
+Uso:  python3 narrar.py CARPETA_KOKORO   (con kokoro-v1.0.onnx y voices-v1.0.bin)
 Salida: narracion.wav  +  timeline.js (la animación se adapta al ritmo de la voz)
 
 La voz NUNCA se acelera: cada frase se lee a su ritmo natural, con pausas
 de lectura entre frases, y es la animación la que se estira o encoge un poco
 para que cada texto aparezca justo cuando la voz lo dice.
-Necesita: pip install piper-tts, y ffmpeg (con rubberband).
+Voz: Kokoro (neuronal, muy natural), voz masculina española "em_alex".
+Necesita: pip install kokoro-onnx soundfile, y ffmpeg.
 """
 import json, os, subprocess, sys, tempfile, wave
+import soundfile as sf
+from kokoro_onnx import Kokoro
+
+VOZ = "em_alex"
+VELOCIDAD = 1.0
 
 ANIM_DUR = 66          # duración original de la animación (index.html)
 LEAD = 0.12            # el texto aparece un pelín antes que la voz
@@ -42,15 +48,12 @@ GUION = [
 ]
 BOOM_SILENCIO = 0.45   # pausa entre "que ocurre" y la explosión
 
-PIPER = ["--length-scale", "1.0", "--noise-scale", "0.6", "--noise-w-scale", "0.9",
-         "--sentence-silence", "0.28"]
-# Un poco más grave conservando el timbre natural + cuerpo y presencia
-VOZ_FX = ("aresample=44100,rubberband=pitch=0.94:formant=preserved:pitchq=quality,"
-          "highpass=f=70,bass=g=3:f=150,equalizer=f=3200:t=q:w=1.2:g=2,"
-          "acompressor=threshold=-22dB:ratio=2.5:attack=8:release=120,"
+# Solo un toque de cuerpo y presencia; sin cambiar el tono para que suene humana
+VOZ_FX = ("aresample=44100,highpass=f=60,bass=g=2:f=140,equalizer=f=3500:t=q:w=1.2:g=1.5,"
+          "acompressor=threshold=-22dB:ratio=2:attack=10:release=150,"
           "silenceremove=start_periods=1:start_threshold=-50dB,areverse,"
           "silenceremove=start_periods=1:start_threshold=-50dB,areverse,"
-          "volume=1.5")
+          "volume=1.4")
 
 
 def dur(path):
@@ -58,7 +61,8 @@ def dur(path):
         return w.getnframes() / w.getframerate()
 
 
-def main(model):
+def main(carpeta):
+    tts = Kokoro(os.path.join(carpeta, "kokoro-v1.0.onnx"), os.path.join(carpeta, "voices-v1.0.bin"))
     here = os.path.dirname(os.path.abspath(__file__))
     tmp = tempfile.mkdtemp()
     anchors = [[0.0, 0.0]]
@@ -74,8 +78,8 @@ def main(model):
             anchors.append([a, v]); prev_a, prev_v = a, v; voz_fin = v + 1.4  # deja respirar el boom
             continue
         raw, fx = f"{tmp}/r{i}.wav", f"{tmp}/f{i}.wav"
-        subprocess.run([sys.executable, "-m", "piper", "-m", model, "-f", raw, *PIPER],
-                       input=texto.encode(), check=True, capture_output=True)
+        audio, sr = tts.create(texto, voice=VOZ, speed=VELOCIDAD, lang="es")
+        sf.write(raw, audio, sr)
         subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", raw, "-af", VOZ_FX, fx], check=True)
         d = dur(fx)
         anchors.append([a, max(prev_v + 0.05, v - LEAD)])
