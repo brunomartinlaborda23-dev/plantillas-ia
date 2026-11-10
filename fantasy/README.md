@@ -1,12 +1,16 @@
-# Liga Fantasy del Vestuario
+# Liga Fantasy Colmenar Viejo
 
-Liga fantasy de fútbol para un equipo amateur: los jugadores del mercado sois vosotros.
+Liga fantasy de fútbol del Colmenar Viejo Cadete D: los jugadores del mercado sois vosotros.
 
-- **Admin (dueño de la página):** crea la liga, mete la plantilla (nombre, posición, dorsal, precio y foto),
-  crea cada jornada, cierra las alineaciones antes del partido y luego mete resultado y estadísticas.
-- **Mánagers (compañeros):** cada uno ficha su equipo con el presupuesto, elige capitán (puntúa doble)
-  y compite en la clasificación.
-- Formatos: fútbol sala, fútbol 7, fútbol 8 y fútbol 11.
+1. **Inscripción:** cada uno abre el enlace y se apunta con su nombre, dorsal y posición.
+2. **Crear la liga:** cuando estáis todos, el administrador (dueño de la página) pulsa "Crear la liga":
+   todos los apuntados entran al mercado con el mismo precio y cada mánager recibe 30 M.
+3. **Fichar:** cada uno hace su equipo comprando a compañeros al valor de mercado del momento; si vende, cobra
+   lo que valga entonces. El capitán puntúa doble.
+4. **Jornadas:** el admin cierra alineaciones antes del partido y luego mete resultado y estadísticas.
+5. **Valor de mercado:** tras cada partido, cada punto por encima de 3 sube el valor 0,1 M (y por debajo lo baja,
+   con mínimo 0,5 M).
 
 Es un único `index.html` publicado como Artifact de Claude con base de datos compartida (`db`), identidad
-(`user`) y subida de fotos (`assets`). Solo funciona dentro del visor de Artifacts.
+(`user`) y subida de fotos (`assets`). Solo funciona dentro del visor de Artifacts. Los resultados no se leen
+solos de la web de la federación: el admin los mete tras cada partido.
