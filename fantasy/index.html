@@ -310,6 +310,7 @@ async function boot() {
   try { S.canWrite = await user?.can?.("data.write"); } catch { S.canWrite = null; }
   $("#tabAdmin").hidden = !S.owner;
   try { window.claude.use("assets").then((a) => { S.assets = a; }); } catch {}
+  if (S.owner) try { window.claude.use("sample").then(async (fn) => { if (!fn) return; const lim = await fn.limits().catch(() => null); if (lim?.images) { S.sample = fn; S.sampleLim = lim.images; schedule(); } }); } catch {}
   const done = (k) => { S.loaded[k] = true; if (allLoaded()) { clearTimeout(timer); S.offline = false; } schedule(); };
   const fail = (k) => () => { S.loaded[k] = true; S.offline = true; schedule(); };
   db.doc("league/config").onSnapshot((d) => { S.cfg = d.exists ? d.data() : null; if (!d.metadata.fromCache) done("cfg"); else schedule(); }, fail("cfg"));
@@ -585,6 +586,52 @@ function viewAdmin() {
 function defaultPriceFor(budget, formato) { const n = Object.values((FORMATOS[formato] || FORMATOS.f7).slots).reduce((x, y) => x + y, 0); return Math.max(0.5, Math.round((budget / n) * 0.85 * 2) / 2); }
 function defaultPrice() { const c = cfg(); return defaultPriceFor(c.budget, c.formato); }
 
+function matchappBlock(md) {
+  const st = S.importState?.[md.id];
+  if (!S.sample) return `<div class="note">Para leer el acta de Matchapp automáticamente, abre la página en la app de Claude o en el navegador con tu cuenta. Mientras tanto, mete los datos a mano.</div>`;
+  return `<div class="panel section" style="gap:8px;background:var(--surface-2)"><div class="row spread"><div><b>Acta de Matchapp</b><br><small class="muted">Sube una o varias capturas del acta del partido (alineación, goles, tarjetas) y se rellena la tabla. Revisa y pulsa Guardar.</small></div>
+    <label class="btn ${st?.busy ? "" : "primary"}" for="mx-${esc(md.id)}">${st?.busy ? "Leyendo…" : "Subir capturas"}</label><input id="mx-${esc(md.id)}" data-matchapp="${esc(md.id)}" type="file" accept="${esc(S.sampleLim.mediaTypes.join(","))}" multiple hidden ${st?.busy ? "disabled" : ""}></div>
+    ${st?.msg ? `<div class="note ${st.warn ? "warn" : ""}">${esc(st.msg)}</div>` : ""}
+    <small class="muted">Las paradas del portero no salen en el acta: mételas a mano en la columna "Par" después de ver el vídeo.</small></div>`;
+}
+async function importMatchapp(mid, files) {
+  const lim = S.sampleLim; const md = S.mds[mid]; const d = S.mdDraft[mid];
+  const imgs = [...files].filter((f) => lim.mediaTypes.includes(f.type) && f.size <= lim.maxInputBytes).slice(0, lim.maxCount);
+  S.importState ||= {};
+  if (!imgs.length) { S.importState[mid] = { msg: "Esas imágenes no valen: usa capturas JPG o PNG.", warn: true }; render(); return; }
+  S.importState[mid] = { busy: true }; render();
+  const roster = Object.values(S.players).map((p) => ({ id: p.id, name: p.name, dorsal: p.dorsal || "", pos: p.pos }));
+  const prompt = `Estas imágenes son capturas de la app Matchapp con el acta de un partido de fútbol base.
+Nuestro equipo es "${cfg().club}". El rival que tenemos apuntado es "${d.rival || md.rival || "desconocido"}".
+Esta es nuestra plantilla (id, nombre, dorsal, posición):
+${JSON.stringify(roster)}
+
+Lee SOLO los datos de nuestro equipo y emparéjalos con la plantilla por dorsal y nombre (los nombres del acta pueden venir con apellidos o en mayúsculas). Si un jugador del acta no está en la plantilla, ponlo en "unmatched".
+Responde solo con un JSON con esta forma:
+{"rival": string|null, "ourGoals": number|null, "theirGoals": number|null,
+ "players": [{"id": "id de la plantilla", "played": true, "goals": 0, "yellow": 0, "red": false, "ownGoals": 0}],
+ "unmatched": ["nombre tal como sale en el acta"]}
+"played" es true si salió de titular o entró de suplente. Usa null en lo que no se vea en las imágenes.`;
+  try {
+    const r = await S.sample.json(prompt, { images: imgs, modelTier: "default" });
+    const ids = new Set(roster.map((x) => x.id)); let n = 0;
+    const num = (v, max) => Math.max(0, Math.min(max, Math.round(+v || 0)));
+    for (const x of Array.isArray(r?.players) ? r.players : []) {
+      if (!ids.has(x?.id)) continue;
+      const cur = d.stats[x.id] || {};
+      d.stats[x.id] = { ...cur, played: !!x.played || num(x.goals, 20) > 0, goals: num(x.goals, 20) || "", yellow: num(x.yellow, 2) || "", red: !!x.red, og: num(x.ownGoals, 5) || "" };
+      n++;
+    }
+    if (Number.isFinite(+r?.ourGoals) && r?.ourGoals !== null) d.gf = String(num(r.ourGoals, 99));
+    if (Number.isFinite(+r?.theirGoals) && r?.theirGoals !== null) d.ga = String(num(r.theirGoals, 99));
+    if (!d.rival && typeof r?.rival === "string") d.rival = r.rival.slice(0, 40);
+    const un = (Array.isArray(r?.unmatched) ? r.unmatched : []).filter((x) => typeof x === "string").slice(0, 20);
+    S.importState[mid] = { msg: n ? `Leídos ${n} jugadores${d.gf !== "" ? ` y el resultado ${d.gf}–${d.ga}` : ""}. Revisa la tabla y pulsa "Guardar jornada".${un.length ? ` No he encontrado en la plantilla a: ${un.join(", ").replace(/\.$/, "")}.` : ""}` : "No he podido leer jugadores de nuestro equipo en esas capturas. Prueba con una captura más nítida del acta.", warn: !n || un.length > 0 };
+  } catch (e) {
+    S.importState[mid] = { msg: e?.code === "not_granted" ? "Has denegado el permiso para que Claude lea las capturas. Puedes activarlo en los permisos de la página." : e?.code === "rate_limited" ? "Demasiadas lecturas seguidas. Espera un poco y vuelve a probar." : "No se ha podido leer el acta. Vuelve a probar o mete los datos a mano.", warn: true };
+  }
+  render();
+}
 function mdEditor(md) {
   const d = S.mdDraft[md.id] ||= JSON.parse(JSON.stringify({ gf: md.gf ?? "", ga: md.ga ?? "", rival: md.rival || "", date: md.date || "", stats: md.stats || {} }));
   const open = S.openMd === "a:" + md.id;
@@ -600,6 +647,7 @@ function mdEditor(md) {
         <div class="field"><label for="md-gf-${esc(md.id)}">Goles nuestros</label><input id="md-gf-${esc(md.id)}" type="number" min="0" data-bind="mdDraft.${esc(md.id)}.gf" value="${esc(d.gf)}"></div>
         <div class="field"><label for="md-ga-${esc(md.id)}">Goles del rival</label><input id="md-ga-${esc(md.id)}" type="number" min="0" data-bind="mdDraft.${esc(md.id)}.ga" value="${esc(d.ga)}"></div>
       </div>
+      ${matchappBlock(md)}
       <div class="tablebox stats"><table><thead><tr><th>Jugador</th><th title="Jugó">Jugó</th><th title="Goles">Gol</th><th title="Asistencias">Asis</th><th title="Paradas (porteros)">Par</th><th title="Amarillas">Am</th><th title="Roja">Roja</th><th title="Goles en propia">PP</th><th title="Penaltis fallados">PF</th><th title="MVP">MVP</th><th title="Bonus del míster (puede ser negativo)">Bonus</th><th class="r">Pts</th></tr></thead><tbody>
       ${ps.map((p) => `<tr><td>${esc(p.name)} <span class="pos ${esc(p.pos)}">${esc(p.pos)}</span></td><td>${ck(p.id, "played")}</td><td>${n(p.id, "goals")}</td><td>${n(p.id, "assists")}</td><td>${p.pos === "POR" ? n(p.id, "saves", 60) : ""}</td><td>${n(p.id, "yellow", 2)}</td><td>${ck(p.id, "red")}</td><td>${n(p.id, "og", 5)}</td><td>${n(p.id, "penMiss", 5)}</td><td>${ck(p.id, "mvp")}</td><td><input type="number" min="-10" max="10" aria-label="bonus" data-stat="${esc(md.id)}|${esc(p.id)}|bonus" value="${esc(d.stats[p.id]?.bonus || "")}"></td><td class="r num">${playerPts(p, { ...d, stats: d.stats })}</td></tr>`).join("")}
       </tbody></table></div>
@@ -788,6 +836,7 @@ document.addEventListener("change", async (ev) => {
   const t = ev.target;
   if (t.dataset.actChange === "market-sort") { S.marketSort = t.value; t.blur(); render(); }
   if (t.tagName === "SELECT" && t.dataset.bind) { t.blur(); render(); }
+  if (t.dataset.matchapp && t.files?.length && S.sample) { importMatchapp(t.dataset.matchapp, t.files); return; }
   if (t.id === "ed-photo" && t.files?.[0] && S.assets) {
     const f = t.files[0];
     if (f.size > 8 * 1024 * 1024) { toast("La foto pesa demasiado: máximo 8 MB."); return; }

@@ -7,7 +7,7 @@ Liga fantasy de fútbol del Colmenar Viejo Cadete D: los jugadores del mercado s
    todos los apuntados entran al mercado con el mismo precio y cada mánager recibe 30 M.
 3. **Fichar:** cada uno hace su equipo comprando a compañeros al valor de mercado del momento; si vende, cobra
    lo que valga entonces. El capitán puntúa doble.
-4. **Jornadas:** el admin cierra alineaciones antes del partido y luego mete resultado y estadísticas.
+4. **Jornadas:** el admin cierra alineaciones antes del partido; después sube capturas del acta de Matchapp y Claude rellena quién jugó, goles, tarjetas y resultado. Las paradas se meten a mano tras ver el vídeo.
 5. **Valor de mercado:** tras cada partido, cada punto por encima de 3 sube el valor 0,1 M (y por debajo lo baja,
    con mínimo 0,5 M).
 
