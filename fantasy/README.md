@@ -20,3 +20,8 @@ solos de la web de la federación: el admin los mete tras cada partido.
 **Extras:** equipación blanca con banda roja en diagonal y el dorsal en cada jugador; el admin marca a los
 capitanes del equipo (brazalete "C"); botón "Finalizar liga" arriba (solo admin) que borra equipos, jornadas y
 mercado y vuelve a la inscripción, conservando a los apuntados.
+
+**Bots y mercado diario:** al crear la liga cada mánager tiene una plantilla de bots (0 puntos) y el mercado
+abre 7 días después. Cada día a las 12:00 (hora de Madrid) salen al azar N jugadores disponibles (por defecto 8),
+los mismos para todos; solo se puede fichar a esos. El admin puede abrir el mercado antes, cambiar el de hoy para
+probar y marcar jugadores como no disponibles.

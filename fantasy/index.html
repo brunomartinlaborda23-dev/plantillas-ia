@@ -27,6 +27,8 @@
   --kit-red: #c81e2c;
   --kit-ink: #14171c;
   --kit-edge: #9aa39c;
+  --kit-bot: #d9dedb;
+  --kit-bot-2: #9ca69f;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -122,6 +124,8 @@ tr.me td { background: color-mix(in srgb, var(--card) 14%, transparent); }
 .kit { --size: 44px; width: var(--size); height: var(--size); flex: 0 0 auto; display: inline-block; }
 .kit svg { width: 100%; height: 100%; display: block; overflow: visible; }
 .slot .kit { --size: 60px; filter: drop-shadow(0 3px 5px rgb(0 0 0 / .35)); }
+.botslot .tag { background: color-mix(in srgb, var(--scoreboard) 70%, transparent); }
+.botslot .price { color: var(--card); }
 .dor { font-family: var(--f-display); font-weight: 800; color: var(--kit-red); margin-right: 2px; }
 .armband { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; background: var(--card); color: var(--card-ink); font-size: 11px; font-weight: 800; vertical-align: 2px; margin-left: 2px; }
 .endbtn { background: transparent; color: var(--scoreboard-ink); border-color: color-mix(in srgb, var(--scoreboard-ink) 35%, transparent); }
@@ -356,13 +360,13 @@ const allLoaded = () => Object.values(S.loaded).every(Boolean);
 function initials(name) { return String(name || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase(); }
 let kitSeq = 0;
 function kit(p, size) {
-  const id = "k" + (++kitSeq); const num = String(p?.dorsal || "").slice(0, 2);
+  const id = "k" + (++kitSeq); const num = p?.bot ? "B" : String(p?.dorsal || "").slice(0, 2);
   const st = size ? ` style="--size:${size}px"` : "";
   const shirt = "M33 9 L42 5 Q50 13 58 5 L67 9 L93 23 L84 42 L74 37 L74 95 L26 95 L26 37 L16 42 L7 23 Z";
   return `<span class="kit"${st} aria-hidden="true"><svg viewBox="0 0 100 100"><defs><clipPath id="${id}"><path d="${shirt}"/></clipPath></defs>
-    <path d="${shirt}" fill="var(--kit-white)"/>
-    <g clip-path="url(#${id})"><path d="M14 0 L38 0 L96 100 L72 100 Z" fill="var(--kit-red)"/></g>
-    <path d="M42 5 Q50 13 58 5" fill="none" stroke="var(--kit-red)" stroke-width="3"/>
+    <path d="${shirt}" fill="${p?.bot ? "var(--kit-bot)" : "var(--kit-white)"}"/>
+    <g clip-path="url(#${id})"><path d="M14 0 L38 0 L96 100 L72 100 Z" fill="${p?.bot ? "var(--kit-bot-2)" : "var(--kit-red)"}"/></g>
+    <path d="M42 5 Q50 13 58 5" fill="none" stroke="${p?.bot ? "var(--kit-bot-2)" : "var(--kit-red)"}" stroke-width="3"/>
     <path d="${shirt}" fill="none" stroke="var(--kit-edge)" stroke-width="2.5" stroke-linejoin="round"/>
     ${num ? `<text x="50" y="70" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" font-weight="800" font-size="${num.length > 1 ? 36 : 40}" fill="var(--kit-ink)" stroke="var(--kit-white)" stroke-width="4" paint-order="stroke">${esc(num)}</text>` : ""}
   </svg></span>`;
@@ -425,7 +429,7 @@ function viewLobby() {
   const c = cfg(); const n = Object.keys(S.signups).length;
   const count = POS_ORDER.map((k) => `${Object.values(S.signups).filter((x) => x.pos === k).length} ${k}`).join(" · ");
   let html = `<section class="section"><div><div class="eyebrow">${esc(c.club)}</div><h2>Apúntate a la liga</h2></div>
-    <p class="muted" style="margin:0;max-width:62ch">Primero nos apuntamos todos con nombre, dorsal y posición. Cuando estemos, el administrador crea la liga y se abre el mercado: cada uno tiene <b>${money(c.budget)}</b> para fichar a sus compañeros. Cada vez que alguien lo hace bien en un partido suma puntos y sube su valor de mercado.</p>
+    <p class="muted" style="margin:0;max-width:62ch">Primero nos apuntamos todos con nombre, dorsal y posición. Cuando estemos, el administrador crea la liga y cada mánager empieza con una plantilla de bots. A la semana se abre el mercado y cada uno tiene <b>${money(c.budget)}</b> para fichar a sus compañeros. El mercado cambia todos los días a las 12:00. Cada vez que alguien lo hace bien en un partido suma puntos y sube su media y su valor.</p>
     ${joinForm()}</section>
     <section class="section"><div class="row spread"><h2>Apuntados</h2><span class="eyebrow">${n} · ${count}</span></div>${signupList()}</section>`;
   if (S.owner) {
@@ -438,7 +442,7 @@ function viewLobby() {
       <div class="field"><label for="ac-formato">Formato</label><select id="ac-formato" data-bind="adminCfg.formato">${Object.entries(FORMATOS).map(([k, f]) => `<option value="${k}" ${a.formato === k ? "selected" : ""}>${f.label}</option>`).join("")}</select></div>
       <div class="field"><label for="ac-budget">Dinero por mánager (M)</label><input id="ac-budget" type="number" min="5" data-bind="adminCfg.budget" value="${esc(a.budget)}"></div>
       <div class="field"><label for="ac-start">Media inicial de todos</label><input id="ac-start" type="number" min="1" max="99" data-bind="adminCfg.startMedia" placeholder="${MEDIA_INICIAL}" value="${esc(a.startMedia)}"></div></div>
-      <p class="muted" style="margin:0;font-size:13px">Todos empiezan con media ${sm}, que vale ${money(spm)}. Cada partido la media sube o baja según los puntos y con ella el precio. Si alguien se apunta tarde, lo podrás añadir desde Admin.</p>
+      <p class="muted" style="margin:0;font-size:13px">Al crear la liga cada mánager recibe una plantilla de bots y el mercado abre 7 días después (puedes abrirlo antes desde Admin). Todos empiezan con media ${sm}, que vale ${money(spm)}. Cada partido la media sube o baja según los puntos y con ella el precio. Si alguien se apunta tarde, lo podrás añadir desde Admin.</p>
       <div class="row"><button class="btn primary" data-act="league-start" ${n ? "" : "disabled"}>Crear la liga con ${n} jugador${n === 1 ? "" : "es"}</button></div></div></section>`;
   } else html += `<div class="note">Cuando estéis todos, el administrador creará la liga y aquí se abrirá el mercado.</div>`;
   return html;
@@ -476,51 +480,97 @@ function viewHome() {
 
 function fmtDate(d) { if (!d) return "Fecha por decidir"; try { return new Date(d + "T12:00:00").toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" }); } catch { return d; } }
 
+// ---------- Bots y mercado diario ----------
+const isBot = (id) => typeof id === "string" && id.startsWith("bot-");
+function botObj(id) { const [, pos, n] = id.split("-"); return { id, bot: true, name: "Bot", pos: POS[pos] ? pos : "MED", dorsal: "", n: +n || 1 }; }
+const getP = (id) => S.players[id] || (isBot(id) ? botObj(id) : null);
+function fullBots() { const out = []; for (const pos of POS_ORDER) for (let i = 1; i <= slots()[pos]; i++) out.push(`bot-${pos}-${i}`); return out; }
+function normalizeSquad(ids) {
+  const sl = slots(); const out = [];
+  for (const pos of POS_ORDER) {
+    const real = ids.filter((id) => !isBot(id) && S.players[id]?.pos === pos);
+    const bots = ids.filter((id) => isBot(id) && botObj(id).pos === pos);
+    const need = Math.max(0, sl[pos] - real.length);
+    const keep = bots.slice(0, need); let n = 1;
+    while (keep.length < need) { const bid = `bot-${pos}-${n++}`; if (!keep.includes(bid)) keep.push(bid); }
+    out.push(...real, ...keep);
+  }
+  return out;
+}
+function madridNow(d = new Date()) { const o = {}; for (const x of new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(d)) o[x.type] = x.value; return o; }
+function marketDay() { const now = new Date(); const p = madridNow(now); const q = +p.hour < 12 ? madridNow(new Date(now.getTime() - 864e5)) : p; return `${q.year}-${q.month}-${q.day}`; }
+function minsToChange() { const p = madridNow(); const h = +p.hour, m = +p.minute; return h < 12 ? (12 - h) * 60 - m : (36 - h) * 60 - m; }
+function fmtMins(n) { const h = Math.floor(n / 60), m = n % 60; return h ? `${h} h ${m} min` : `${m} min`; }
+function hashStr(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+function rng(seed) { return () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function marketPool() { return Object.values(S.players).filter((p) => p.available !== false).sort((a, b) => (a.id < b.id ? -1 : 1)); }
+function marketSize() { return Math.max(1, Math.round(+S.cfg?.marketSize || 8)); }
+function todayMarket() {
+  const a = [...marketPool()]; const r = rng(hashStr(marketDay() + "|" + (S.cfg?.marketSalt || "")));
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a.slice(0, marketSize()).sort(bySquad);
+}
+function marketOpen() { const t = S.cfg?.marketOpensAt; return !t || Date.now() >= Date.parse(t); }
+function fmtDateTime(iso) { try { return new Date(iso).toLocaleString("es-ES", { timeZone: "Europe/Madrid", weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }); } catch { return iso; } }
+const inMarket = (pid) => todayMarket().some((p) => p.id === pid);
+setInterval(() => {
+  const day = marketDay(); const open = marketOpen();
+  if (day !== S.lastDay || open !== S.wasOpen) { const first = S.lastDay === undefined; S.lastDay = day; S.wasOpen = open; if (!first) { S.draft = S.draft?.dirty ? S.draft : null; schedule(); } }
+  document.querySelectorAll("[data-countdown]").forEach((el) => { el.textContent = fmtMins(minsToChange()); });
+}, 20000);
+
 function myTeam() { return S.uid ? S.teams[S.uid] : null; }
-function teamMoves(t) { return t?.moves || (t?.players || []).map((pid) => ({ t: "buy", pid, price: priceOf(S.players[pid]) })); }
+function teamMoves(t) { return t?.moves || (t?.players || []).filter((pid) => !isBot(pid)).map((pid) => ({ t: "buy", pid, price: priceOf(S.players[pid]) })); }
 function cashOf(moves) { return Math.round((cfg().budget - moves.reduce((a, m) => a + (m.t === "buy" ? +m.price : -m.price), 0)) * 10) / 10; }
 function teamValue(ids) { return ids.reduce((a, id) => a + priceOf(S.players[id]), 0); }
 function ensureDraft() {
   const t = myTeam();
   if (!S.draft || S.draft.base !== (t?.updatedAt || "new")) {
     const moves = teamMoves(t);
-    S.draft = { base: t?.updatedAt || "new", name: t?.name || "", players: [...(t?.players || [])].filter((id) => S.players[id]), captain: t?.captain || null, moves: [...moves], baseLen: moves.length, dirty: false };
+    S.draft = { base: t?.updatedAt || "new", name: t?.name || "", players: normalizeSquad([...(t?.players || [])].filter((id) => getP(id))), captain: t?.captain || null, moves: [...moves], baseLen: moves.length, dirty: false };
   }
   return S.draft;
 }
-function draftBuy(d, pid) {
+function draftBuy(d, pid, replaceBot) {
+  const pos = S.players[pid]?.pos; if (!pos || d.players.includes(pid)) return false;
+  const bot = replaceBot && d.players.includes(replaceBot) ? replaceBot : d.players.find((x) => isBot(x) && botObj(x).pos === pos);
+  if (!bot) return false;
   const i = d.moves.findIndex((m, k) => k >= d.baseLen && m.pid === pid && m.t === "sell");
   if (i >= 0) d.moves.splice(i, 1); else d.moves.push({ t: "buy", pid, price: priceOf(S.players[pid]) });
-  d.players.push(pid);
+  d.players = d.players.filter((x) => x !== bot); d.players.push(pid);
+  return true;
 }
 function draftSell(d, pid) {
   const i = d.moves.findIndex((m, k) => k >= d.baseLen && m.pid === pid && m.t === "buy");
   if (i >= 0) d.moves.splice(i, 1); else d.moves.push({ t: "sell", pid, price: priceOf(S.players[pid]) });
-  d.players = d.players.filter((x) => x !== pid);
+  d.players = normalizeSquad(d.players.filter((x) => x !== pid));
 }
 
 function viewTeam() {
   if (!S.uid) return `<div class="empty"><h3>Inicia sesión para jugar</h3><p class="muted">Necesitas abrir la liga con tu cuenta de Claude para tener tu propio equipo.</p></div>`;
-  if (!Object.keys(S.players).length) return `<div class="empty"><h3>Sin jugadores en el mercado</h3><p class="muted">El administrador todavía no ha añadido la plantilla.</p></div>`;
   const d = ensureDraft(); const sl = slots(); const c = cfg();
-  const cash = cashOf(d.moves); const value = teamValue(d.players);
+  const cash = cashOf(d.moves); const value = teamValue(d.players.filter((x) => !isBot(x)));
   const openMd = mdList().find((m) => !hasResult(m) && !m.lineups);
   const lockedMd = mdList().find((m) => !hasResult(m) && m.lineups);
   const readonly = S.canWrite === false;
   let html = `<section class="section"><div class="row spread"><div><div class="eyebrow">${myTeam() ? "Tu equipo" : "Crea tu equipo"}</div><h2>${esc(d.name || "Mi equipo")}</h2></div>
     <div class="row">${myTeam() ? `<span class="pts num">${managerTotal(S.uid)}</span><span class="muted">puntos</span>` : ""}</div></div>`;
   if (readonly) html += `<div class="note warn">Con tu nivel de acceso puedes ver la liga pero no guardar un equipo. Pide al administrador que te invite con permiso para editar.</div>`;
+  const nb = d.players.filter(isBot).length;
+  if (!marketOpen()) html += `<div class="note">Esta semana juegas con tu plantilla de bots. El mercado abre el <b>${esc(fmtDateTime(S.cfg.marketOpensAt))}</b> y ahí podrás fichar con tus ${money(c.budget)}.</div>`;
+  else if (nb) html += `<div class="note">Tienes ${nb} bot${nb === 1 ? "" : "s"} en el equipo, que no puntúan. Toca un bot para fichar a alguien del <a href="#mercado">mercado de hoy</a>.</div>`;
   if (lockedMd) html += `<div class="note">Las alineaciones de la J${esc(lockedMd.number)} ya están cerradas. Los cambios que guardes cuentan para la siguiente jornada.</div>`;
   else if (openMd) html += `<div class="note">Alineaciones abiertas para la J${esc(openMd.number)} vs ${esc(openMd.rival || "rival")}. Guarda antes de que el administrador las cierre.</div>`;
   html += `<div class="field" style="max-width:360px"><label for="team-name">Nombre de tu equipo</label><input id="team-name" maxlength="40" data-bind="draft.name" placeholder="Los Galácticos del Barrio" value="${esc(d.name)}"></div>
     <div class="budget ${cash < 0 ? "over" : ""}"><div><span class="eyebrow">Caja</span><b class="num">${money(cash)}</b></div><div><span class="eyebrow">Valor del equipo</span><b class="num">${money(value)}</b></div><div><span class="eyebrow">Patrimonio</span><b class="num">${money(cash + value)}</b></div></div>
     <div class="pitch" role="group" aria-label="Alineación">`;
   for (const pos of [...POS_ORDER].reverse()) {
-    const ids = d.players.filter((id) => S.players[id]?.pos === pos);
+    const ids = d.players.filter((id) => getP(id)?.pos === pos).sort((a, b) => isBot(a) - isBot(b));
     html += `<div class="line">`;
     for (let i = 0; i < sl[pos]; i++) {
-      const p = S.players[ids[i]];
-      if (p) html += `<button class="slot" data-act="slot-player" data-id="${esc(p.id)}" aria-label="${esc(p.name)}, opciones"><span class="avwrap">${ovr(p)}${avatar(p)}${d.captain === p.id ? `<span class="cap" title="Tu capitán: puntúa doble">×2</span>` : ""}</span><span class="tag">${p.isCaptain ? "Ⓒ " : ""}${esc(p.name)}</span><span class="price num">${money(priceOf(p))}</span></button>`;
+      const p = getP(ids[i]);
+      if (p?.bot) html += `<button class="slot botslot" data-act="slot-pick" data-pos="${pos}" data-bot="${esc(p.id)}" aria-label="Bot de ${POS[pos].n.toLowerCase()}: fichar a alguien"><span class="avwrap">${avatar(p)}</span><span class="tag">Bot · ${pos}</span><span class="price num">Fichar</span></button>`;
+      else if (p) html += `<button class="slot" data-act="slot-player" data-id="${esc(p.id)}" aria-label="${esc(p.name)}, opciones"><span class="avwrap">${ovr(p)}${avatar(p)}${d.captain === p.id ? `<span class="cap" title="Tu capitán: puntúa doble">×2</span>` : ""}</span><span class="tag">${p.isCaptain ? "Ⓒ " : ""}${esc(p.name)}</span><span class="price num">${money(priceOf(p))}</span></button>`;
       else html += `<button class="slot open" data-act="slot-pick" data-pos="${pos}" aria-label="Elegir ${POS[pos].n.toLowerCase()}"><span class="avwrap"><span class="av">+</span></span><span class="tag">${pos}</span></button>`;
     }
     html += `</div>`;
@@ -528,7 +578,7 @@ function viewTeam() {
   const problems = teamProblems(d);
   html += `</div><div class="row spread"><span class="muted" id="team-msg">${teamMsg(d)}</span>
     <div class="row">${d.dirty ? `<button class="btn" data-act="draft-reset">Deshacer cambios</button>` : ""}<button class="btn primary" id="team-save" data-act="draft-save" ${problems.length || readonly || S.saving ? "disabled" : ""}>${myTeam() ? "Guardar cambios" : "Crear mi equipo"}</button></div></div>
-    <p class="muted" style="margin:0;font-size:13px">Empiezas con ${money(c.budget)}. Fichas al precio de mercado de ese momento y, si vendes, cobras lo que valga entonces: si un compañero se sale y sube de valor, ganas dinero. El capitán puntúa doble. Puedes guardar aunque te queden huecos, pero un hueco vacío da 0 puntos.</p></section>`;
+    <p class="muted" style="margin:0;font-size:13px">Empiezas con ${money(c.budget)} y una plantilla de bots que dan 0 puntos. Cada día a las 12:00 cambian los jugadores que se pueden fichar. Fichas al precio de ese momento y, si vendes, cobras lo que valga entonces (el hueco lo vuelve a ocupar un bot). El capitán puntúa doble.</p></section>`;
   // historial
   const hist = scoredMds().filter((md) => lineupFor(md, S.uid));
   if (hist.length) html += `<section class="section"><h3>Tus jornadas</h3><div class="tablebox"><table><thead><tr><th>Jornada</th><th>Capitán</th><th class="r">Puntos</th></tr></thead><tbody>${hist.reverse().map((md) => `<tr class="clickable" data-act="show-md-team" data-md="${esc(md.id)}" data-id="${esc(S.uid)}"><td>J${esc(md.number)} vs ${esc(md.rival || "")}</td><td>${esc(S.players[lineupFor(md, S.uid).captain]?.name || "–")}</td><td class="r">${ptsEl(managerMdPts(md, S.uid))}</td></tr>`).join("")}</tbody></table></div></section>`;
@@ -538,14 +588,27 @@ function viewTeam() {
 function teamProblems(d) {
   const problems = []; const left = cashOf(d.moves);
   if (!d.name.trim()) problems.push("ponle nombre al equipo");
-  if (!d.players.length) problems.push("ficha al menos a un jugador");
   if (left < 0) problems.push(`te faltan ${money(-left)} en caja`);
-  if (d.players.length && !d.captain) problems.push("elige capitán (toca a un jugador)");
+  if (d.players.some((x) => !isBot(x)) && !d.captain) problems.push("elige capitán (toca a un jugador)");
   return problems;
 }
-function teamMsg(d) { const pr = teamProblems(d); const n = totalSlots() - d.players.length; return pr.length ? "Para guardar: " + pr.join(", ") + "." : (d.dirty ? "Tienes cambios sin guardar." : myTeam() ? "Equipo guardado." : "") + (n > 0 ? ` Te quedan ${n} hueco${n === 1 ? "" : "s"} libres.` : ""); }
+function teamMsg(d) { const pr = teamProblems(d); return pr.length ? "Para guardar: " + pr.join(", ") + "." : d.dirty ? "Tienes cambios sin guardar." : myTeam() ? "Equipo guardado." : "Ponle nombre y guarda para entrar en la clasificación."; }
 function ownership(pid) { const ts = Object.values(S.teams); if (!ts.length) return 0; return Math.round(100 * ts.filter((t) => (t.players || []).includes(pid)).length / ts.length); }
 
+function marketPanel() {
+  const open = marketOpen(); const list = todayMarket(); const t = myTeam();
+  const d = S.uid ? ensureDraft() : null; const cash = d ? cashOf(d.moves) : 0;
+  let html = `<section class="section"><div class="row spread"><div><div class="eyebrow">Cambia en <span data-countdown>${fmtMins(minsToChange())}</span> · todos los días a las 12:00</div><h2>Mercado de hoy</h2></div>${d ? `<span class="chip">En caja ${money(cash)}</span>` : ""}</div>`;
+  if (!open) html += `<div class="note">El mercado abre el <b>${esc(fmtDateTime(S.cfg.marketOpensAt))}</b>. Mientras tanto cada uno juega con su plantilla de bots. Ya puedes ver quién saldría hoy.</div>`;
+  else if (!t && S.uid) html += `<div class="note">Para fichar, primero <a href="#equipo">ponle nombre a tu equipo</a> y guárdalo.</div>`;
+  if (!list.length) return html + `<div class="empty"><h3>Hoy no hay nadie en el mercado</h3><p class="muted">Salen los jugadores que pueden jugar. El administrador marca quién no está disponible.</p></div></section>`;
+  html += `<div class="tablebox"><table><tbody>${list.map((p) => {
+    const owned = d?.players.includes(p.id); const pr = priceOf(p);
+    const can = open && t && !owned && pr <= cash;
+    return `<tr><td class="clickable" data-act="show-player" data-id="${esc(p.id)}">${who(p, `· ${seasonPts(p)} pts ${trend(p)}`)}</td><td class="r">${owned ? `<span class="chip win">Es tuyo</span>` : `<button class="btn small ${can ? "primary" : ""}" data-act="mk-buy" data-id="${esc(p.id)}" ${can ? "" : "disabled"}>Fichar ${money(pr)}</button>`}</td></tr>`;
+  }).join("")}</tbody></table></div><p class="muted" style="margin:0;font-size:13px">Cada día salen ${Math.min(marketSize(), marketPool().length)} de los ${marketPool().length} jugadores disponibles, al azar. Todos los mánagers ven el mismo mercado y un jugador puede estar en varios equipos.</p></section>`;
+  return html;
+}
 function viewMarket() {
   let ps = Object.values(S.players);
   if (!ps.length) return `<div class="empty"><h3>Mercado vacío</h3><p class="muted">Aquí estarán todos los jugadores del equipo con su precio, sus puntos y cuántos mánagers los tienen.</p></div>`;
@@ -554,7 +617,7 @@ function viewMarket() {
   const key = S.marketSort;
   rows.sort((a, b) => key === "price" ? priceOf(b.p) - priceOf(a.p) : key === "media" ? mediaOf(b.p) - mediaOf(a.p) : key === "own" ? b.own - a.own : key === "name" ? a.p.name.localeCompare(b.p.name) : b.pts - a.pts);
   const mine = new Set(myTeam()?.players || []);
-  return `<section class="section"><div class="row spread"><h2>Mercado</h2>
+  return marketPanel() + `<section class="section"><div class="row spread"><h2>Toda la plantilla</h2>
     <div class="row"><div class="seg" role="group" aria-label="Posición">${["ALL", ...POS_ORDER].map((k) => `<button data-act="market-pos" data-v="${k}" aria-pressed="${S.marketPos === k}">${k === "ALL" ? "Todos" : k}</button>`).join("")}</div>
     <div class="field"><select id="market-sort" aria-label="Ordenar" data-act-change="market-sort"><option value="pts" ${key === "pts" ? "selected" : ""}>Más puntos</option><option value="media" ${key === "media" ? "selected" : ""}>Mejor media</option><option value="price" ${key === "price" ? "selected" : ""}>Más valor</option><option value="own" ${key === "own" ? "selected" : ""}>Más fichados</option><option value="name" ${key === "name" ? "selected" : ""}>Nombre</option></select></div></div></div>
     <div class="tablebox"><table><thead><tr><th>Jugador</th><th class="r hide-sm">PJ</th><th class="r hide-sm">Pts/PJ</th><th class="r hide-sm">Fichado</th><th class="r">Valor</th><th class="r">Puntos</th></tr></thead><tbody>
@@ -590,7 +653,8 @@ function viewRules() {
   const c = cfg(); const f = FORMATOS[c.formato] || FORMATOS.f7;
   return `<div class="grid2"><section class="section"><h2>Cómo se puntúa</h2><div class="panel rules">${rows.map(([a, b]) => `<span>${a}</span><span>${b}</span>`).join("")}</div></section>
     <section class="section"><h2>Cómo se juega</h2><div class="panel section" style="gap:10px">
-      <p style="margin:0">Cada mánager empieza con <b>${money(c.budget)}</b> para fichar hasta ${totalSlots()} compañeros en formato ${esc(f.label)}. Un mismo jugador puede estar en varios equipos fantasy.</p>
+      <p style="margin:0">Cada mánager empieza con una <b>plantilla de bots</b> (no puntúan) y <b>${money(c.budget)}</b> en caja. La primera semana se juega con los bots. Después se abre el mercado para fichar hasta ${totalSlots()} compañeros en formato ${esc(f.label)}. Un mismo jugador puede estar en varios equipos fantasy.</p>
+      <p style="margin:0"><b>Mercado diario:</b> todos los días a las 12:00 (hora de Madrid) salen al azar ${marketSize()} de los jugadores que pueden jugar. Solo se puede fichar a los que están en el mercado ese día. Vender se puede siempre.</p>
       <p style="margin:0"><b>Media:</b> todos empezáis con ${+S.cfg?.startMedia || MEDIA_INICIAL}. Después de cada partido que juegues, tu media cambia lo que hayas puntuado menos 3: con 8 puntos sube 5, con 1 punto baja 2 (como mucho +10 o −8 por partido, entre 1 y 99). Si no juegas, no cambia.</p>
       <p style="margin:0"><b>Valor de mercado:</b> cada punto de media hace que valgas un 4 % más. Con media 50 vales ${money(price50())}, con 60 unos ${money(priceForMedia(60))} y con 70 unos ${money(priceForMedia(70))}. Las tarjetas y las derrotas restan puntos, así que también bajan tu media y tu precio. Si vendes a alguien, cobras lo que valga en ese momento.</p>
       <p style="margin:0">Antes de cada partido el administrador <b>cierra las alineaciones</b>: lo que tengas guardado en ese momento es lo que puntúa esa jornada.</p>
@@ -620,12 +684,17 @@ function viewAdmin() {
       <div class="field" style="flex:1 1 70px"><label for="np-dorsal">Dorsal</label><input id="np-dorsal" data-bind="newPlayer.dorsal" value="${esc(np.dorsal)}"></div>
       <div class="field" style="flex:1 1 80px"><label for="np-media">Media</label><input id="np-media" type="number" min="1" max="99" data-bind="newPlayer.media" value="${esc(np.media)}" placeholder="${+S.cfg?.startMedia || MEDIA_INICIAL}"></div>
       <button class="btn primary" data-act="player-add">Añadir</button></div>
-    ${ps.length ? `<div class="tablebox"><table><thead><tr><th>Jugador</th><th class="r">Valor</th><th class="r">Puntos</th><th></th></tr></thead><tbody>${ps.map((p) => `<tr><td>${who(p)}</td><td class="r num">${money(priceOf(p))}<br><small class="muted">empezó con ${esc(p.media ?? MEDIA_INICIAL)}</small></td><td class="r num">${seasonPts(p)}</td><td class="r"><div class="row" style="justify-content:flex-end;flex-wrap:nowrap;gap:6px"><button class="btn small" data-act="cap-toggle" data-col="players" data-id="${esc(p.id)}" aria-pressed="${!!p.isCaptain}">${p.isCaptain ? "Quitar capitán" : "Capitán"}</button><button class="btn small" data-act="player-edit" data-id="${esc(p.id)}">Editar</button></div></td></tr>`).join("")}</tbody></table></div>` : ""}</section>`;
+    ${ps.length ? `<div class="tablebox"><table><thead><tr><th>Jugador</th><th class="r">Valor</th><th class="r">Puntos</th><th></th></tr></thead><tbody>${ps.map((p) => `<tr><td>${who(p)}</td><td class="r num">${money(priceOf(p))}<br><small class="muted">empezó con ${esc(p.media ?? MEDIA_INICIAL)}</small></td><td class="r num">${seasonPts(p)}</td><td class="r"><div class="row" style="justify-content:flex-end;flex-wrap:nowrap;gap:6px"><button class="btn small ${p.available === false ? "danger" : ""}" data-act="avail-toggle" data-id="${esc(p.id)}" aria-pressed="${p.available !== false}" title="Si no puede jugar, no sale en el mercado">${p.available === false ? "No disponible" : "Disponible"}</button><button class="btn small" data-act="cap-toggle" data-col="players" data-id="${esc(p.id)}" aria-pressed="${!!p.isCaptain}">${p.isCaptain ? "Quitar capitán" : "Capitán"}</button><button class="btn small" data-act="player-edit" data-id="${esc(p.id)}">Editar</button></div></td></tr>`).join("")}</tbody></table></div>` : ""}</section>`;
+  html += `<section class="section"><h2>Mercado</h2><div class="panel section">
+      <p style="margin:0">${marketOpen() ? `El mercado está <b>abierto</b>. Hoy salen ${todayMarket().length} jugadores y cambia en <span data-countdown>${fmtMins(minsToChange())}</span>.` : `El mercado abre el <b>${esc(fmtDateTime(S.cfg.marketOpensAt))}</b>. Hasta entonces los mánagers juegan con bots.`}</p>
+      <div class="row">${marketOpen() ? "" : `<button class="btn primary" data-act="market-open-now">Abrir el mercado ya</button>`}<button class="btn" data-act="market-reroll">Cambiar el mercado de hoy</button>${S.cfg?.marketOpensAt && marketOpen() ? `<button class="btn" data-act="market-close-week">Cerrarlo otra semana</button>` : ""}</div>
+      <p class="muted" style="margin:0;font-size:13px">"Cambiar el mercado de hoy" saca otro grupo al azar sin esperar a las 12:00. Sirve para probar. En la plantilla puedes marcar quién no puede jugar (lesionado, no convocado) para que no salga en el mercado.</p></div></section>`;
   html += `<section class="section"><h2>Ajustes de la liga</h2><div class="panel section"><div class="fields">
       <div class="field"><label for="ac-name">Nombre de la liga</label><input id="ac-name" data-bind="adminCfg.name" value="${esc(S2.name)}"></div>
       <div class="field"><label for="ac-club">Vuestro equipo</label><input id="ac-club" data-bind="adminCfg.club" value="${esc(S2.club)}"></div>
       <div class="field"><label for="ac-formato">Formato</label><select id="ac-formato" data-bind="adminCfg.formato">${Object.entries(FORMATOS).map(([k, f]) => `<option value="${k}" ${S2.formato === k ? "selected" : ""}>${f.label}</option>`).join("")}</select></div>
-      <div class="field"><label for="ac-budget">Presupuesto (M)</label><input id="ac-budget" type="number" min="10" data-bind="adminCfg.budget" value="${esc(S2.budget)}"></div></div>
+      <div class="field"><label for="ac-budget">Presupuesto (M)</label><input id="ac-budget" type="number" min="10" data-bind="adminCfg.budget" value="${esc(S2.budget)}"></div>
+      <div class="field"><label for="ac-msize">Jugadores en el mercado cada día</label><input id="ac-msize" type="number" min="1" max="40" data-bind="adminCfg.marketSize" value="${esc(S2.marketSize ?? 8)}"></div></div>
       <p class="muted" style="margin:0;font-size:13px">Si cambias el formato, los mánagers tendrán que rehacer la alineación para que cuadre. Las jornadas ya cerradas no cambian.</p>
       <div class="row"><button class="btn primary" data-act="cfg-save">Guardar ajustes</button></div></div>
       <div class="note">Para que tus compañeros jueguen, comparte esta página con ellos desde el botón de compartir, con permiso para editar. Cada uno crea su equipo en "Mi equipo"; solo tú ves esta pestaña.</div></section>`;
@@ -714,12 +783,15 @@ function renderModal() {
   if (!m) { root.replaceChildren(); return; }
   let inner = "";
   if (m.type === "pick") {
-    const d = ensureDraft(); const left = cashOf(d.moves);
-    const ps = Object.values(S.players).filter((p) => p.pos === m.pos && !d.players.includes(p.id)).sort((a, b) => seasonPts(b) - seasonPts(a));
-    inner = `<div class="row spread"><h3>Fichar ${POS[m.pos].n.toLowerCase()}</h3><span class="muted num">En caja: ${money(left)}</span></div><div class="list">${ps.map((p) => { const pr = priceOf(p); const can = pr <= left; return `<div class="item"><div>${who(p, `· ${seasonPts(p)} pts ${trend(p)}`)}</div><button class="btn small ${can ? "primary" : ""}" data-act="pick" data-id="${esc(p.id)}" ${can ? "" : "disabled"}>${money(pr)}</button></div>`; }).join("") || `<p class="muted">No quedan ${POS[m.pos].n.toLowerCase()}s libres en la plantilla.</p>`}</div>`;
+    const d = ensureDraft(); const left = cashOf(d.moves); const open = marketOpen();
+    const ps = todayMarket().filter((p) => p.pos === m.pos && !d.players.includes(p.id));
+    inner = `<div class="row spread"><h3>Fichar ${POS[m.pos].n.toLowerCase()}</h3><span class="muted num">En caja: ${money(left)}</span></div>
+      ${open ? "" : `<div class="note">El mercado abre el ${esc(fmtDateTime(S.cfg.marketOpensAt))}. Hasta entonces puedes mirar, pero no fichar.</div>`}
+      <div class="list">${ps.map((p) => { const pr = priceOf(p); const can = open && pr <= left; return `<div class="item"><div>${who(p, `· ${seasonPts(p)} pts ${trend(p)}`)}</div><button class="btn small ${can ? "primary" : ""}" data-act="pick" data-id="${esc(p.id)}" ${can ? "" : "disabled"}>${money(pr)}</button></div>`; }).join("") || `<p class="muted">Hoy no hay ningún ${POS[m.pos].n.toLowerCase()} en el mercado.</p>`}</div>
+      <p class="muted" style="margin:0;font-size:13px">Solo se puede fichar a los que están hoy en el mercado. Cambia en <span data-countdown>${fmtMins(minsToChange())}</span>, a las 12:00.</p>`;
   } else if (m.type === "slot") {
     const p = S.players[m.id]; const d = ensureDraft();
-    inner = `${who(p, `· vale ${money(priceOf(p))} ${trend(p)}`)}<div class="row"><button class="btn primary" data-act="captain" data-id="${esc(p.id)}" ${d.captain === p.id ? "disabled" : ""}>${d.captain === p.id ? "Ya es tu capitán (×2)" : "Hacer capitán (×2)"}</button><button class="btn" data-act="swap" data-id="${esc(p.id)}">Cambiar por otro</button><button class="btn danger" data-act="unpick" data-id="${esc(p.id)}">Vender por ${money(priceOf(p))}</button><button class="btn" data-act="show-player" data-id="${esc(p.id)}">Ver ficha</button></div>`;
+    inner = `${who(p, `· vale ${money(priceOf(p))} ${trend(p)}`)}<div class="row"><button class="btn primary" data-act="captain" data-id="${esc(p.id)}" ${d.captain === p.id ? "disabled" : ""}>${d.captain === p.id ? "Ya es tu capitán (×2)" : "Hacer capitán (×2)"}</button><button class="btn" data-act="swap" data-id="${esc(p.id)}">Cambiar por otro</button><button class="btn danger" data-act="unpick" data-id="${esc(p.id)}">Vender por ${money(priceOf(p))}</button>${marketOpen() ? "" : `<span class="muted" style="font-size:13px">Si vendes ahora, hasta que abra el mercado su hueco lo ocupará un bot.</span>`}<button class="btn" data-act="show-player" data-id="${esc(p.id)}">Ver ficha</button></div>`;
   } else if (m.type === "player") {
     const p = S.players[m.id]; if (!p) { S.modal = null; root.replaceChildren(); return; }
     const hist = scoredMds().filter((md) => md.stats?.[p.id]?.played).reverse();
@@ -788,7 +860,7 @@ const actions = {
     write(async () => {
       for (const x of su) if (!S.players[x.id]) await S.db.doc("players/" + x.id).set({ name: x.name, pos: x.pos, dorsal: x.dorsal, media, isCaptain: !!x.isCaptain });
       const { startMedia, ...rest } = a;
-      await S.db.doc("league/config").set({ ...(S.cfg || {}), ...rest, name: (a.name || "Liga Fantasy").slice(0, 50), club: (a.club || "").slice(0, 50), budget, price50: p50, startMedia: media, started: true, startedAt: new Date().toISOString() });
+      await S.db.doc("league/config").set({ ...(S.cfg || {}), ...rest, name: (a.name || "Liga Fantasy").slice(0, 50), club: (a.club || "").slice(0, 50), budget, price50: p50, startMedia: media, marketSize: +S.cfg?.marketSize || 8, marketOpensAt: new Date(Date.now() + 7 * 864e5).toISOString(), marketSalt: "", started: true, startedAt: new Date().toISOString() });
       S.adminCfg = null; location.hash = "equipo";
     }, `Liga creada: ${su.length} jugadores en el mercado`);
   },
@@ -800,11 +872,26 @@ const actions = {
   "show-team": (el) => { S.modal = { type: "team", id: el.dataset.id }; renderModal(); },
   "show-md-team": (el) => { S.modal = { type: "mdteam", id: el.dataset.id, md: el.dataset.md }; renderModal(); },
   "close-modal": (el, ev) => { if (ev.target !== el) return; const was = S.modal?.type; S.modal = null; S.confirmDel = null; if (was === "saves") render(); else renderModal(); },
-  "slot-pick": (el) => { S.modal = { type: "pick", pos: el.dataset.pos }; renderModal(); },
+  "slot-pick": (el) => { S.modal = { type: "pick", pos: el.dataset.pos, bot: el.dataset.bot || null }; renderModal(); },
   "slot-player": (el) => { S.modal = { type: "slot", id: el.dataset.id }; renderModal(); },
-  pick: (el) => { const d = ensureDraft(); draftBuy(d, el.dataset.id); if (!d.captain) d.captain = el.dataset.id; d.dirty = true; S.modal = null; render(); },
+  pick: (el) => {
+    const d = ensureDraft(); const pid = el.dataset.id;
+    if (!marketOpen() || !inMarket(pid)) { toast("Ese jugador ya no está en el mercado de hoy"); S.modal = null; render(); return; }
+    if (!draftBuy(d, pid, S.modal?.bot)) { toast("Tienes esa posición llena: vende primero a alguien"); return; }
+    if (!d.captain) d.captain = pid; d.dirty = true; S.modal = null; render();
+  },
+  "mk-buy": (el) => {
+    const pid = el.dataset.id; const p = S.players[pid];
+    if (!myTeam()) { location.hash = "equipo"; toast("Primero ponle nombre a tu equipo y guárdalo"); return; }
+    if (!marketOpen() || !inMarket(pid)) { toast("Ese jugador ya no está en el mercado de hoy"); return; }
+    const d = ensureDraft();
+    if (!draftBuy(d, pid)) { toast(`Tienes llena la posición ${p.pos}: vende a alguien en Mi equipo`); return; }
+    if (cashOf(d.moves) < 0) { S.draft = null; toast("No tienes dinero suficiente"); render(); return; }
+    if (!d.captain) d.captain = pid;
+    write(async () => { await S.db.doc("teams/" + S.uid).set({ name: d.name.trim().slice(0, 40) || myTeam().name, players: d.players, captain: d.captain, moves: d.moves, updatedAt: new Date().toISOString() }); S.draft = null; }, `${p.name} fichado por ${money(priceOf(p))}`);
+  },
   unpick: (el) => { const d = ensureDraft(); draftSell(d, el.dataset.id); if (d.captain === el.dataset.id) d.captain = null; d.dirty = true; S.modal = null; render(); },
-  swap: (el) => { const p = S.players[el.dataset.id]; actions.unpick(el); S.modal = { type: "pick", pos: p.pos }; renderModal(); },
+  swap: (el) => { const p = S.players[el.dataset.id]; actions.unpick(el); S.modal = { type: "pick", pos: p.pos, bot: null }; renderModal(); },
   captain: (el) => { ensureDraft().captain = el.dataset.id; S.draft.dirty = true; S.modal = null; render(); },
   "draft-reset": () => { S.draft = null; render(); },
   "draft-save": () => {
@@ -841,6 +928,10 @@ const actions = {
     const np = S.newPlayer; if (!np.name.trim()) { toast("Escribe el nombre del jugador"); return; }
     write(async () => { await S.db.doc("players/" + rid("p")).set({ name: np.name.trim().slice(0, 40), pos: np.pos, dorsal: String(np.dorsal || "").slice(0, 3), media: Math.max(1, Math.min(99, Math.round(+np.media || +S.cfg?.startMedia || MEDIA_INICIAL))) }); S.newPlayer = { name: "", pos: np.pos, dorsal: "", media: "" }; }, `${np.name.trim()} añadido`);
   },
+  "avail-toggle": (el) => { const p = S.players[el.dataset.id]; const on = p.available === false; write(() => S.db.doc("players/" + p.id).update({ available: on }), on ? `${p.name} vuelve al mercado` : `${p.name} no saldrá en el mercado`); },
+  "market-open-now": () => write(() => S.db.doc("league/config").update({ marketOpensAt: new Date().toISOString() }), "Mercado abierto"),
+  "market-close-week": () => write(() => S.db.doc("league/config").update({ marketOpensAt: new Date(Date.now() + 7 * 864e5).toISOString() }), "Mercado cerrado una semana"),
+  "market-reroll": () => write(() => S.db.doc("league/config").update({ marketSalt: Math.random().toString(36).slice(2, 8) }), "Mercado de hoy cambiado"),
   "cap-toggle": (el) => {
     const col = el.dataset.col; const id = el.dataset.id; const cur = (col === "players" ? S.players : S.signups)[id];
     const on = !cur?.isCaptain;
@@ -880,7 +971,7 @@ const actions = {
   },
   "cfg-save": () => {
     const a = S.adminCfg;
-    write(async () => { const { startMedia: _sm, startPrice: _sp, ...rest } = a; await S.db.doc("league/config").set({ ...(S.cfg || {}), ...rest, name: (a.name || "Liga Fantasy").slice(0, 50), club: (a.club || "").slice(0, 50), formato: a.formato, budget: Math.max(5, +a.budget || 30) }); S.adminCfg = null; }, "Ajustes guardados");
+    write(async () => { const { startMedia: _sm, startPrice: _sp, ...rest } = a; await S.db.doc("league/config").set({ ...(S.cfg || {}), ...rest, name: (a.name || "Liga Fantasy").slice(0, 50), club: (a.club || "").slice(0, 50), formato: a.formato, budget: Math.max(5, +a.budget || 30), marketSize: Math.max(1, Math.min(40, Math.round(+a.marketSize || 8))) }); S.adminCfg = null; }, "Ajustes guardados");
   },
 };
 
