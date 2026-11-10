@@ -2,6 +2,7 @@
 
 Uso:  python3 narrar.py CARPETA_KOKORO          voz sintética Kokoro (em_alex)
       python3 narrar.py --clon MI_VOZ.wav       TU voz clonada (Chatterbox Multilingual)
+      python3 narrar.py --audio NARRACION.m4a   narración ya grabada (CapCut, tu voz...) leyendo el GUION
 Salida: narracion.wav  +  timeline.js (la animación se adapta al ritmo de la voz)
 
 La voz NUNCA se acelera: cada frase se lee a su ritmo natural, con pausas
@@ -193,8 +194,85 @@ def main(tts):
     print(f"Listo: narracion.wav + timeline.js  (vídeo de {total:.1f} s)")
 
 
+def _norm(p):
+    import re, unicodedata
+    p = unicodedata.normalize("NFD", p.lower())
+    return re.sub(r"[^a-z0-9ñ]", "", "".join(c for c in p if unicodedata.category(c) != "Mn"))
+
+
+def main_audio(ruta_audio):
+    """Usa una narración YA GRABADA (p. ej. texto a voz de CapCut o tu propia voz) leyendo el GUION.
+    Whisper localiza dónde empieza cada frase, se inserta un silencio para la explosión
+    y la animación se adapta al audio. Necesita: pip install faster-whisper soundfile."""
+    import difflib
+    from faster_whisper import WhisperModel
+    here = os.path.dirname(os.path.abspath(__file__))
+    tmp = tempfile.mkdtemp()
+    base = f"{tmp}/base.wav"
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", ruta_audio, "-vn", "-ac", "1", "-ar", "44100", base], check=True)
+    seg, _ = WhisperModel("small", device="cpu", compute_type="int8").transcribe(
+        base, language="es", word_timestamps=True, initial_prompt=" ".join(t for _, t, _ in GUION if t))
+    oidas = [w for s in seg for w in s.words]
+    # palabras del guion con el número de frase al que pertenecen
+    guion = [(i, _norm(w)) for i, (_, t, _) in enumerate(GUION) if t for w in t.split() if _norm(w)]
+    sm = difflib.SequenceMatcher(None, [g[1] for g in guion], [_norm(w.word) for w in oidas], autojunk=False)
+    ini, fin = {}, {}
+    for b in sm.get_matching_blocks():
+        for k in range(b.size):
+            i, w = guion[b.a + k][0], oidas[b.b + k]
+            ini.setdefault(i, w.start); fin[i] = w.end
+    frases = [i for i, (_, t, _) in enumerate(GUION) if t]
+    faltan = [GUION[i][1] for i in frases if i not in ini]
+    if faltan:
+        print("AVISO: no encuentro estas frases en el audio (¿se leyó el guion completo?):")
+        for f in faltan: print("   -", f)
+    total_audio = dur(base)
+    # Se insertan silencios donde la escena lo necesita: hueco para la explosión y,
+    # si la voz va más rápida que la animación, pequeñas pausas antes de la frase.
+    MINR, HUECO_BOOM = 0.6, 1.8
+    cortes, offset = [], 0.0            # (segundo del audio original, silencio insertado)
+    anchors, prev_a, prev_v, min_v = [[0.0, 0.0]], 0.0, 0.0, 0.0
+    ultimo_fin = 0.0
+    for i, (a, t, _) in enumerate(GUION):
+        if t is None:                   # la explosión: justo tras la frase anterior
+            v = ultimo_fin + offset + 0.3
+            anchors.append([a, round(v, 3)]); prev_a, prev_v = a, v
+            min_v = v + HUECO_BOOM - 0.3
+            continue
+        if i not in ini:
+            continue
+        natural = ini[i] + offset - LEAD
+        requerido = max(min_v, prev_v + (a - prev_a) * MINR, prev_v + 0.05)
+        if natural < requerido:
+            hueco = requerido - natural
+            cortes.append((max(ultimo_fin, ini[i] - 0.06), hueco)); offset += hueco
+            natural = requerido
+        anchors.append([a, round(natural, 3)]); prev_a, prev_v = a, natural
+        ultimo_fin = fin[i]
+    total = round(max(total_audio + offset + 1.0, prev_v + (ANIM_DUR - prev_a) * 0.8), 2)
+    anchors.append([ANIM_DUR, total])
+    # montar el audio: trozos originales + silencios
+    partes, filt, ant = [], [], 0.0
+    for k, (c, g) in enumerate(cortes):
+        filt.append(f"[0]atrim={ant:.3f}:{c:.3f},asetpts=N/SR/TB[p{k}];anullsrc=r=44100:cl=mono,atrim=0:{g:.3f}[s{k}]")
+        partes += [f"[p{k}]", f"[s{k}]"]; ant = c
+    filt.append(f"[0]atrim={ant:.3f},asetpts=N/SR/TB[pf]"); partes.append("[pf]")
+    filt.append("".join(partes) + f"concat=n={len(partes)}:v=0:a=1,highpass=f=60,"
+                "acompressor=threshold=-22dB:ratio=2:attack=10:release=150,loudnorm=I=-16:TP=-1.5,"
+                f"apad,atrim=0:{total},aformat=channel_layouts=stereo:sample_rates=44100[out]")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", base, "-filter_complex", ";".join(filt),
+                    "-map", "[out]", os.path.join(here, "narracion.wav")], check=True)
+    print(f"{len(cortes)} pausas añadidas ({offset:.1f} s en total)")
+    with open(os.path.join(here, "timeline.js"), "w") as fh:
+        fh.write("// Generado por narrar.py: [segundo de animación, segundo de vídeo]\n")
+        fh.write("window.TIMELINE = " + json.dumps({"total": total, "anchors": anchors}) + ";\n")
+    print(f"{len(ini)}/{len(frases)} frases localizadas. Listo: narracion.wav + timeline.js (vídeo de {total:.1f} s)")
+
+
 if __name__ == "__main__":
-    if sys.argv[1] == "--clon":
+    if sys.argv[1] == "--audio":
+        main_audio(sys.argv[2])
+    elif sys.argv[1] == "--clon":
         PAUSA_FRASE, PAUSA_ESCENA, MIN_RATIO = 0.18, 0.35, 0.92   # ritmo TikTok, vídeo > 60 s
         main(VozClonada(sys.argv[2]))
     else:
