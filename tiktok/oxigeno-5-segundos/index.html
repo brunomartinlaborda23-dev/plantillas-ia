@@ -67,7 +67,7 @@ function uvRays(t,uv){
     for(let i=0;i<11;i++){ const a=Math.PI*(0.55+i*0.055); const L=1100;
       ctx.strokeStyle=`rgba(200,120,255,${0.6*uv})`; ctx.beginPath(); ctx.moveTo(SUN.x,SUN.y); ctx.lineTo(SUN.x+Math.cos(a)*L, SUN.y+Math.sin(a)*L); ctx.stroke(); }
     glow(SUN.x,SUN.y,260,[190,110,255],0.35*uv);
-    small('RADIACIÓN ULTRAVIOLETA',SUN.x-170,SUN.y-150,22,`rgba(220,170,255,${uv})`,'center',3);
+    small('RADIACIÓN ULTRAVIOLETA',SUN.x-230,SUN.y-300,24,`rgba(220,170,255,${uv})`,'center',3);
     ctx.setLineDash([]); ctx.restore();
   }
 }
@@ -140,6 +140,7 @@ function terrace(t){
   ctx.fillStyle='rgba(170,210,255,0.25)'; rr(520,1430,44,70,6); ctx.fill();
   ctx.fillStyle='rgba(120,180,255,0.35)'; rr(522,1458,40,40,5); ctx.fill();
   for(const cx of [400,690]) candle(t,cx);
+  for(const p of PEOPLE) person(p,t);
 }
 function candle(t,cx){
   ctx.fillStyle='#efe6d2'; rr(cx-20,1440,40,62,6); ctx.fill();
@@ -160,6 +161,59 @@ function candle(t,cx){
       ctx.fillStyle=`rgba(200,200,215,${0.16*(1-k)*fade})`; ctx.beginPath(); ctx.arc(cx+Math.sin(k*6+s.p)*14+s.dx*k, 1426-k*260, 4+k*16,0,TAU); ctx.fill(); }
   }
 }
+
+// ---------------- personas: se marean y caen, y se levantan al volver el oxígeno ----------------
+const PEOPLE=[
+  {x0:40, x1:300, walk:[3,12.2], base:1640, h:250, dir:-1, tf:12.4, tg:57.0, shirt:'#e0705a', pants:'#2c3550', skin:'#d8a47f', hair:'#2a1a12'},
+  {x0:775,x1:775, walk:null,     base:1615, h:262, dir:1,  tf:13.1, tg:57.8, shirt:'#3fb3a8', pants:'#252a3a', skin:'#b97b56', hair:'#111'},
+  {x0:1000,x1:1000, walk:null,   base:1705, h:236, dir:-1, tf:13.8, tg:58.5, shirt:'#e8b84a', pants:'#3a2c4a', skin:'#f0c7a4', hair:'#6b3d1f'},
+];
+function personPose(p,t){
+  let x=p.x0, step=0;
+  if(p.walk){ const k=prog(t,p.walk[0],p.walk[1]); x=lerp(p.x0,p.x1,k); step=(t>p.walk[0]&&t<p.walk[1])?Math.sin(t*7):0; }
+  // tambaleo previo (mareo), caída con gravedad y pequeño rebote, y levantarse
+  const wob = win(t,T_GONE+0.6,p.tf+0.2,0.4)*Math.sin(t*9+p.x0)*0.07;
+  const kf = prog(t,p.tf,p.tf+1.0);
+  let ang = p.dir*Math.PI/2*Math.pow(kf,2.2);
+  if(kf>=1) ang = p.dir*Math.PI/2*(1-0.04*Math.max(0,Math.sin((t-p.tf-1)*12))*Math.exp(-(t-p.tf-1)*3));
+  const kg = easeInOut(prog(t,p.tg,p.tg+2.2));
+  ang = ang*(1-kg) + wob*(1-kf);
+  const knees = Math.sin(Math.PI*Math.min(1,kf*1.4))*0.35 + Math.sin(Math.PI*kg)*0.5;   // flexión de rodillas
+  return {x, ang, step, knees, arms: kf>0&&kg<1 ? 1 : 0};
+}
+function person(p,t){
+  const {x,ang,step,knees,arms}=personPose(p,t);
+  const h=p.h, leg=h*0.46, torso=h*0.34, head=h*0.085;
+  ctx.save(); ctx.translate(x,p.base); ctx.rotate(ang);
+  // sombra
+  ctx.save(); ctx.rotate(-ang); ctx.fillStyle='rgba(0,0,0,0.45)'; ctx.beginPath(); ctx.ellipse(p.dir*Math.abs(Math.sin(ang))*h*0.45,4,h*0.18+Math.abs(Math.sin(ang))*h*0.32,10,0,0,TAU); ctx.fill(); ctx.restore();
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  const hip=-leg*(1-knees*0.25);
+  // piernas (con flexión de rodillas)
+  ctx.strokeStyle=p.pants; ctx.lineWidth=h*0.075;
+  for(const s of [-1,1]){ const kx=s*h*0.03+knees*h*0.12*p.dir+step*s*h*0.05;
+    ctx.beginPath(); ctx.moveTo(s*h*0.035,hip); ctx.lineTo(kx,hip*0.5); ctx.lineTo(s*h*0.04+step*s*h*0.07,-2); ctx.stroke(); }
+  // torso
+  ctx.fillStyle=p.shirt; rr(-h*0.085,hip-torso,h*0.17,torso+h*0.02,h*0.05); ctx.fill();
+  // brazos: colgando, o abiertos al caer
+  ctx.strokeStyle=p.shirt; ctx.lineWidth=h*0.055;
+  for(const s of [-1,1]){ const ax=s*h*(0.09+0.12*arms), ay=hip-torso*(0.35+0.5*arms);
+    ctx.beginPath(); ctx.moveTo(s*h*0.08,hip-torso*0.85); ctx.lineTo(ax,ay); ctx.stroke();
+    ctx.fillStyle=p.skin; ctx.beginPath(); ctx.arc(ax,ay,h*0.028,0,TAU); ctx.fill(); }
+  // cabeza
+  const hy=hip-torso-head*1.05;
+  ctx.fillStyle=p.skin; ctx.beginPath(); ctx.arc(0,hy,head,0,TAU); ctx.fill();
+  ctx.fillStyle=p.hair; ctx.beginPath(); ctx.arc(0,hy-head*0.25,head*1.02,Math.PI*1.05,Math.PI*1.95); ctx.fill();
+  // luz cálida del atardecer en el borde
+  ctx.strokeStyle='rgba(255,170,110,0.35)'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(0,hy,head,-0.9,0.6); ctx.stroke();
+  ctx.restore();
+  // "estrellitas" de mareo mientras están en el suelo
+  const dz=win(t,p.tf+1.2,p.tg+1.5,0.5);
+  if(dz>0){ const hx=x+p.dir*h*0.86, hy2=p.base-h*0.12;
+    for(let i=0;i<3;i++){ const a=t*3+i*TAU/3; ctx.fillStyle=`rgba(255,230,140,${0.85*dz})`;
+      ctx.font=`700 28px ${SANS}`; ctx.textAlign='center'; ctx.fillText('✦',hx+Math.cos(a)*34,hy2-30+Math.sin(a)*10); } }
+}
+
 function air(t){
   const lvl=o2(t);
   for(const p of AIR){
@@ -293,9 +347,10 @@ function renderAt(t){
   // ---- textos ----
   caption(t,3.4,6.6,'Estás en una terraza, al atardecer.');
   caption(t,6.6,10,'1 de cada 5 moléculas del aire es oxígeno.',{hl:'oxígeno.'});
-  caption(t,10.2,13.6,'Y de repente... desaparece.',{size:64});
-  caption(t,13.6,18.6,'Al instante, se apagan todas las llamas de la Tierra.');
-  caption(t,18.6,24,'Los motores de coches y aviones se paran. Sin oxígeno, no hay combustión.');
+  caption(t,10.2,13.2,'Y de repente... desaparece.',{size:64});
+  caption(t,13.2,17.8,'La gente se marea y cae: el golpe de presión desequilibra el oído interno.');
+  caption(t,17.8,21,'Al instante, se apagan todas las llamas de la Tierra.');
+  caption(t,21,24,'Los motores se paran: sin oxígeno, no hay combustión.');
   card(t,24.2,31,()=>gauge(t));
   caption(t,24.4,27.6,'El aire pierde de golpe una quinta parte de su presión.');
   caption(t,27.6,31,'Como subir 2.000 metros en un instante.');
@@ -307,7 +362,7 @@ function renderAt(t){
   caption(t,47,50.6,'Pero si justo cogieras aire... ese aire sin oxígeno podría marearte.');
   caption(t,50.8,55,'Y entonces...',{size:64});
   caption(t,55.2,59,'Vuelve el oxígeno. Y otro golpe en los oídos.',{hl:'oxígeno.'});
-  caption(t,59,62.8,'Pero las velas no se vuelven a encender solas.');
+  caption(t,59,62.8,'La gente se levanta, aturdida... pero las velas no se encienden solas.');
   caption(t,62.8,66.8,'Y esto solo era el oxígeno del aire. El agua y las rocas también están hechas de oxígeno...');
   titleCard(t,66.8,DUR+1,['¿Y si desapareciera','TODO el','oxígeno?'],'Parte 2','SÍGUEME PARA NO PERDÉRTELA');
   titleCard(t,-1,3.2,['¿Y si el','','OXÍGENO'],'desapareciera 5 segundos?','EL 21% DEL AIRE QUE RESPIRAS');
