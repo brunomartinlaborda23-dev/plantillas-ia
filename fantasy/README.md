@@ -16,3 +16,7 @@ Liga fantasy de fútbol del Colmenar Viejo Cadete D: los jugadores del mercado s
 Es un único `index.html` publicado como Artifact de Claude con base de datos compartida (`db`), identidad
 (`user`) y subida de fotos (`assets`). Solo funciona dentro del visor de Artifacts. Los resultados no se leen
 solos de la web de la federación: el admin los mete tras cada partido.
+
+**Extras:** equipación blanca con banda roja en diagonal y el dorsal en cada jugador; el admin marca a los
+capitanes del equipo (brazalete "C"); botón "Finalizar liga" arriba (solo admin) que borra equipos, jornadas y
+mercado y vuelve a la inscripción, conservando a los apuntados.

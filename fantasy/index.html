@@ -23,6 +23,10 @@
   --f-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
   --f-body: "Barlow", "Segoe UI", system-ui, sans-serif;
   --r: 10px;
+  --kit-white: #fbfbf8;
+  --kit-red: #c81e2c;
+  --kit-ink: #14171c;
+  --kit-edge: #9aa39c;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -37,6 +41,7 @@
   --good: #4fbf78; --bad: #ef6b5f; --scoreboard: #060c09; --scoreboard-ink: #e9f2ea; color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.45; }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--scoreboard); }
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -114,10 +119,18 @@ tr.me td { background: color-mix(in srgb, var(--card) 14%, transparent); }
 .line { position: relative; z-index: 1; display: flex; justify-content: space-evenly; gap: 6px; }
 .slot { width: 84px; display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: 0; padding: 0; cursor: pointer; color: var(--chalk); }
 .slot .av { --size: 54px; box-shadow: 0 3px 10px rgb(0 0 0 / .3); border-color: var(--chalk); }
-.slot.empty .av { background: color-mix(in srgb, var(--chalk) 18%, transparent); border-style: dashed; font-size: 26px; }
+.kit { --size: 44px; width: var(--size); height: var(--size); flex: 0 0 auto; display: inline-block; }
+.kit svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.slot .kit { --size: 60px; filter: drop-shadow(0 3px 5px rgb(0 0 0 / .35)); }
+.dor { font-family: var(--f-display); font-weight: 800; color: var(--kit-red); margin-right: 2px; }
+.armband { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; background: var(--card); color: var(--card-ink); font-size: 11px; font-weight: 800; vertical-align: 2px; margin-left: 2px; }
+.endbtn { background: transparent; color: var(--scoreboard-ink); border-color: color-mix(in srgb, var(--scoreboard-ink) 35%, transparent); }
+.endbtn:hover { border-color: var(--scoreboard-ink); }
+.endbtn.armed { background: var(--bad); border-color: var(--bad); color: #fff; }
+.slot.open .av { background: color-mix(in srgb, var(--chalk) 18%, transparent); border-style: dashed; font-size: 26px; }
 .slot .tag { background: var(--scoreboard); color: var(--scoreboard-ink); font-size: 12px; font-weight: 600; padding: 2px 7px; border-radius: 4px; max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slot .price { font-size: 11px; font-weight: 700; opacity: .9; }
-.slot .cap { position: absolute; transform: translate(20px, -4px); background: var(--card); color: var(--card-ink); font-weight: 800; font-size: 12px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; }
+.slot .cap { position: absolute; transform: translate(24px, -6px); background: var(--card); color: var(--card-ink); font-weight: 800; font-size: 11px; width: 24px; height: 22px; border-radius: 50%; display: grid; place-items: center; }
 .slot .avwrap { position: relative; display: grid; place-items: center; }
 
 .budget { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border-radius: var(--r); overflow: hidden; border: 1px solid var(--line); }
@@ -134,7 +147,7 @@ tr.me td { background: color-mix(in srgb, var(--card) 14%, transparent); }
 .chip.lock { background: var(--card); color: var(--card-ink); border-color: var(--card); }
 .pts { font-family: var(--f-display); font-weight: 800; font-size: 20px; }
 .pts.neg { color: var(--bad); }
-@media (max-width: 560px) { .hide-sm { display: none; } .tablebox .who .ovr + .av { display: none; } .trend { white-space: normal; } }
+@media (max-width: 560px) { .hide-sm { display: none; } .tablebox .who .ovr + .kit { --size: 34px; } .trend { white-space: normal; } }
 .saves-count { font-family: var(--f-display); font-weight: 800; font-size: 96px; line-height: 1; text-align: center; }
 .saves-big { font-size: 22px; padding: 22px; font-family: var(--f-display); text-transform: uppercase; letter-spacing: .04em; }
 .ovr { flex: 0 0 auto; min-width: 30px; text-align: center; font-family: var(--f-display); font-weight: 800; font-size: 17px; line-height: 1; padding: 5px 4px 4px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -175,14 +188,14 @@ tr.me td { background: color-mix(in srgb, var(--card) 14%, transparent); }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; z-index: 30; font-weight: 600; max-width: calc(100% - 32px); }
 .rules { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; font-size: 14px; }
 .rules span:nth-child(even) { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
-@media (prefers-reduced-motion: no-preference) { .slot .av { transition: transform .15s; } .slot:hover .av { transform: translateY(-2px); } }
+@media (prefers-reduced-motion: no-preference) { .slot .av, .slot .kit { transition: transform .15s; } .slot:hover .av, .slot:hover .kit { transform: translateY(-2px); } }
 </style>
 
 <header class="top">
   <div class="wrap">
     <div class="brand">
       <h1 id="leagueName">Liga <span>Fantasy</span></h1>
-      <div class="sub" id="leagueSub">Cargando…</div>
+      <div class="row" style="gap:10px"><div class="sub" id="leagueSub">Cargando…</div><button class="btn small endbtn" id="endLeague" data-act="league-end" hidden>Finalizar liga</button></div>
     </div>
     <nav class="tabs" id="tabs" aria-label="Secciones">
       <a href="#inicio">Clasificación</a>
@@ -341,13 +354,27 @@ const allLoaded = () => Object.values(S.loaded).every(Boolean);
 
 // ---------- Componentes ----------
 function initials(name) { return String(name || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase(); }
-function avatar(p, size) {
+let kitSeq = 0;
+function kit(p, size) {
+  const id = "k" + (++kitSeq); const num = String(p?.dorsal || "").slice(0, 2);
   const st = size ? ` style="--size:${size}px"` : "";
-  if (p?.photo) return `<span class="av"${st}><img src="/_blob/${esc(p.photo)}" alt=""></span>`;
-  return `<span class="av"${st}>${esc(p?.dorsal || initials(p?.name))}</span>`;
+  const shirt = "M33 9 L42 5 Q50 13 58 5 L67 9 L93 23 L84 42 L74 37 L74 95 L26 95 L26 37 L16 42 L7 23 Z";
+  return `<span class="kit"${st} aria-hidden="true"><svg viewBox="0 0 100 100"><defs><clipPath id="${id}"><path d="${shirt}"/></clipPath></defs>
+    <path d="${shirt}" fill="var(--kit-white)"/>
+    <g clip-path="url(#${id})"><path d="M14 0 L38 0 L96 100 L72 100 Z" fill="var(--kit-red)"/></g>
+    <path d="M42 5 Q50 13 58 5" fill="none" stroke="var(--kit-red)" stroke-width="3"/>
+    <path d="${shirt}" fill="none" stroke="var(--kit-edge)" stroke-width="2.5" stroke-linejoin="round"/>
+    ${num ? `<text x="50" y="70" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" font-weight="800" font-size="${num.length > 1 ? 36 : 40}" fill="var(--kit-ink)" stroke="var(--kit-white)" stroke-width="4" paint-order="stroke">${esc(num)}</text>` : ""}
+  </svg></span>`;
 }
+function avatar(p, size) { return kit(p, size); }
+function photoAv(p, size) {
+  const st = size ? ` style="--size:${size}px"` : "";
+  return p?.photo ? `<span class="av"${st}><img src="/_blob/${esc(p.photo)}" alt=""></span>` : "";
+}
+const armband = (p) => p?.isCaptain ? `<span class="armband" title="Capitán del equipo">C</span>` : "";
 function who(p, extra = "") {
-  return `<div class="who">${S.players[p.id] ? ovr(p) : ""}${avatar(p)}<div style="min-width:0"><b>${esc(p.name)}</b><small><span class="pos ${esc(p.pos)}">${esc(p.pos)}</span> ${p.dorsal && p.photo ? "· " + esc(p.dorsal) : ""} ${extra}</small></div></div>`;
+  return `<div class="who">${S.players[p.id] ? ovr(p) : ""}${avatar(p)}<div style="min-width:0"><b>${p.dorsal ? `<span class="dor">${esc(p.dorsal)}</span> ` : ""}${esc(p.name)} ${armband(p)}</b><small><span class="pos ${esc(p.pos)}">${esc(p.pos)}</span> ${extra}</small></div></div>`;
 }
 function ptsEl(v) { return `<span class="pts num ${v < 0 ? "neg" : ""}">${v}</span>`; }
 function resultChip(md) {
@@ -367,6 +394,7 @@ function render() {
   $("#leagueName").innerHTML = esc(c.name).replace(/(\S+)$/, "<span>$1</span>");
   $("#leagueSub").textContent = !allLoaded() ? "Cargando…" : started() ? `${c.club} · ${(FORMATOS[c.formato] || FORMATOS.f7).label.split(" (")[0]} · ${Object.keys(S.teams).length} mánager${Object.keys(S.teams).length === 1 ? "" : "s"}` : `${c.club} · ${Object.keys(S.signups).length} apuntados`;
   const r = route();
+  const eb = $("#endLeague"); eb.hidden = !(S.owner && started()); eb.textContent = S.confirmEnd ? "¿Seguro? Pulsa otra vez: se borran equipos, jornadas y mercado" : "Finalizar liga"; eb.classList.toggle("armed", !!S.confirmEnd);
   document.querySelectorAll("#tabs a").forEach((a) => { if (a.getAttribute("href") === "#" + r) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
   let html = statusNote();
   if (!S.noDb && allLoaded() && !started() && r !== "reglas") html += viewLobby();
@@ -380,7 +408,7 @@ const bySquad = (a, b) => POS_ORDER.indexOf(a.pos) - POS_ORDER.indexOf(b.pos) ||
 function joinForm() {
   if (!S.uid) return `<div class="note warn">Abre el enlace con tu cuenta de Claude iniciada para poder apuntarte.</div>`;
   const me = S.signups[S.uid];
-  if (me && !S.editJoin) return `<div class="panel row spread"><div class="who">${avatar(me, 48)}<div><div class="eyebrow">Ya estás apuntado</div><b>${esc(me.name)}</b><small><span class="pos ${esc(me.pos)}">${esc(me.pos)}</span> · dorsal ${esc(me.dorsal)}</small></div></div>${started() && S.players[S.uid] ? `<a class="btn primary" href="#equipo">Hacer mi equipo</a>` : `<button class="btn" data-act="join-edit">Cambiar mis datos</button>`}</div>`;
+  if (me && !S.editJoin) return `<div class="panel row spread"><div class="who">${avatar(me, 56)}<div><div class="eyebrow">Ya estás apuntado</div><b>${esc(me.name)} ${armband(me)}</b><small><span class="pos ${esc(me.pos)}">${esc(me.pos)}</span> · dorsal ${esc(me.dorsal)}</small></div></div>${started() && S.players[S.uid] ? `<a class="btn primary" href="#equipo">Hacer mi equipo</a>` : `<button class="btn" data-act="join-edit">Cambiar mis datos</button>`}</div>`;
   const j = S.join ||= { name: me?.name || "", dorsal: me?.dorsal || "", pos: me?.pos || "" };
   return `<div class="panel section"><div class="fields">
       <div class="field"><label for="jn-name">Tu nombre</label><input id="jn-name" maxlength="30" autocomplete="given-name" data-bind="join.name" placeholder="Como te llaman en el equipo" value="${esc(j.name)}"></div>
@@ -391,7 +419,7 @@ function joinForm() {
 function signupList() {
   const su = Object.values(S.signups).sort(bySquad);
   if (!su.length) return `<div class="empty"><h3>Todavía no se ha apuntado nadie</h3><p class="muted">Pásale el enlace al equipo. Cada uno pone su nombre, su dorsal y su posición, y aparecerá aquí.</p></div>`;
-  return `<div class="tablebox"><table><thead><tr><th>Jugador</th><th>Posición</th>${S.owner ? "<th></th>" : ""}</tr></thead><tbody>${su.map((x) => `<tr class="${x.id === S.uid ? "me" : ""}"><td>${who({ ...x, photo: null }, x.id === S.uid ? "· tú" : "")}</td><td>${esc(POS[x.pos]?.n || x.pos)}</td>${S.owner ? `<td class="r"><button class="btn small danger" data-act="signup-remove" data-id="${esc(x.id)}">${S.confirmDel === x.id ? "¿Seguro?" : "Quitar"}</button></td>` : ""}</tr>`).join("")}</tbody></table></div>`;
+  return `<div class="tablebox"><table><thead><tr><th>Jugador</th><th class="hide-sm">Posición</th>${S.owner ? "<th></th>" : ""}</tr></thead><tbody>${su.map((x) => `<tr class="${x.id === S.uid ? "me" : ""}"><td>${who({ ...x, photo: null }, x.id === S.uid ? "· tú" : "")}</td><td class="hide-sm">${esc(POS[x.pos]?.n || x.pos)}</td>${S.owner ? `<td class="r"><div class="row" style="justify-content:flex-end;flex-wrap:nowrap;gap:6px"><button class="btn small" data-act="cap-toggle" data-col="signups" data-id="${esc(x.id)}" aria-pressed="${!!x.isCaptain}">${x.isCaptain ? "Quitar capitán" : "Capitán"}</button><button class="btn small danger" data-act="signup-remove" data-id="${esc(x.id)}">${S.confirmDel === x.id ? "¿Seguro?" : "Quitar"}</button></div></td>` : ""}</tr>`).join("")}</tbody></table></div>`;
 }
 function viewLobby() {
   const c = cfg(); const n = Object.keys(S.signups).length;
@@ -492,8 +520,8 @@ function viewTeam() {
     html += `<div class="line">`;
     for (let i = 0; i < sl[pos]; i++) {
       const p = S.players[ids[i]];
-      if (p) html += `<button class="slot" data-act="slot-player" data-id="${esc(p.id)}" aria-label="${esc(p.name)}, opciones"><span class="avwrap">${ovr(p)}${avatar(p)}${d.captain === p.id ? `<span class="cap" title="Capitán">C</span>` : ""}</span><span class="tag">${esc(p.name)}</span><span class="price num">${money(priceOf(p))}</span></button>`;
-      else html += `<button class="slot empty" data-act="slot-pick" data-pos="${pos}" aria-label="Elegir ${POS[pos].n.toLowerCase()}"><span class="avwrap"><span class="av">+</span></span><span class="tag">${pos}</span></button>`;
+      if (p) html += `<button class="slot" data-act="slot-player" data-id="${esc(p.id)}" aria-label="${esc(p.name)}, opciones"><span class="avwrap">${ovr(p)}${avatar(p)}${d.captain === p.id ? `<span class="cap" title="Tu capitán: puntúa doble">×2</span>` : ""}</span><span class="tag">${p.isCaptain ? "Ⓒ " : ""}${esc(p.name)}</span><span class="price num">${money(priceOf(p))}</span></button>`;
+      else html += `<button class="slot open" data-act="slot-pick" data-pos="${pos}" aria-label="Elegir ${POS[pos].n.toLowerCase()}"><span class="avwrap"><span class="av">+</span></span><span class="tag">${pos}</span></button>`;
     }
     html += `</div>`;
   }
@@ -592,7 +620,7 @@ function viewAdmin() {
       <div class="field" style="flex:1 1 70px"><label for="np-dorsal">Dorsal</label><input id="np-dorsal" data-bind="newPlayer.dorsal" value="${esc(np.dorsal)}"></div>
       <div class="field" style="flex:1 1 80px"><label for="np-media">Media</label><input id="np-media" type="number" min="1" max="99" data-bind="newPlayer.media" value="${esc(np.media)}" placeholder="${+S.cfg?.startMedia || MEDIA_INICIAL}"></div>
       <button class="btn primary" data-act="player-add">Añadir</button></div>
-    ${ps.length ? `<div class="tablebox"><table><thead><tr><th>Jugador</th><th class="r">Valor</th><th class="r">Puntos</th><th></th></tr></thead><tbody>${ps.map((p) => `<tr><td>${who(p)}</td><td class="r num">${money(priceOf(p))}<br><small class="muted">empezó con ${esc(p.media ?? MEDIA_INICIAL)}</small></td><td class="r num">${seasonPts(p)}</td><td class="r"><button class="btn small" data-act="player-edit" data-id="${esc(p.id)}">Editar</button></td></tr>`).join("")}</tbody></table></div>` : ""}</section>`;
+    ${ps.length ? `<div class="tablebox"><table><thead><tr><th>Jugador</th><th class="r">Valor</th><th class="r">Puntos</th><th></th></tr></thead><tbody>${ps.map((p) => `<tr><td>${who(p)}</td><td class="r num">${money(priceOf(p))}<br><small class="muted">empezó con ${esc(p.media ?? MEDIA_INICIAL)}</small></td><td class="r num">${seasonPts(p)}</td><td class="r"><div class="row" style="justify-content:flex-end;flex-wrap:nowrap;gap:6px"><button class="btn small" data-act="cap-toggle" data-col="players" data-id="${esc(p.id)}" aria-pressed="${!!p.isCaptain}">${p.isCaptain ? "Quitar capitán" : "Capitán"}</button><button class="btn small" data-act="player-edit" data-id="${esc(p.id)}">Editar</button></div></td></tr>`).join("")}</tbody></table></div>` : ""}</section>`;
   html += `<section class="section"><h2>Ajustes de la liga</h2><div class="panel section"><div class="fields">
       <div class="field"><label for="ac-name">Nombre de la liga</label><input id="ac-name" data-bind="adminCfg.name" value="${esc(S2.name)}"></div>
       <div class="field"><label for="ac-club">Vuestro equipo</label><input id="ac-club" data-bind="adminCfg.club" value="${esc(S2.club)}"></div>
@@ -691,11 +719,11 @@ function renderModal() {
     inner = `<div class="row spread"><h3>Fichar ${POS[m.pos].n.toLowerCase()}</h3><span class="muted num">En caja: ${money(left)}</span></div><div class="list">${ps.map((p) => { const pr = priceOf(p); const can = pr <= left; return `<div class="item"><div>${who(p, `· ${seasonPts(p)} pts ${trend(p)}`)}</div><button class="btn small ${can ? "primary" : ""}" data-act="pick" data-id="${esc(p.id)}" ${can ? "" : "disabled"}>${money(pr)}</button></div>`; }).join("") || `<p class="muted">No quedan ${POS[m.pos].n.toLowerCase()}s libres en la plantilla.</p>`}</div>`;
   } else if (m.type === "slot") {
     const p = S.players[m.id]; const d = ensureDraft();
-    inner = `${who(p, `· vale ${money(priceOf(p))} ${trend(p)}`)}<div class="row"><button class="btn primary" data-act="captain" data-id="${esc(p.id)}" ${d.captain === p.id ? "disabled" : ""}>${d.captain === p.id ? "Ya es tu capitán" : "Hacer capitán"}</button><button class="btn" data-act="swap" data-id="${esc(p.id)}">Cambiar por otro</button><button class="btn danger" data-act="unpick" data-id="${esc(p.id)}">Vender por ${money(priceOf(p))}</button><button class="btn" data-act="show-player" data-id="${esc(p.id)}">Ver ficha</button></div>`;
+    inner = `${who(p, `· vale ${money(priceOf(p))} ${trend(p)}`)}<div class="row"><button class="btn primary" data-act="captain" data-id="${esc(p.id)}" ${d.captain === p.id ? "disabled" : ""}>${d.captain === p.id ? "Ya es tu capitán (×2)" : "Hacer capitán (×2)"}</button><button class="btn" data-act="swap" data-id="${esc(p.id)}">Cambiar por otro</button><button class="btn danger" data-act="unpick" data-id="${esc(p.id)}">Vender por ${money(priceOf(p))}</button><button class="btn" data-act="show-player" data-id="${esc(p.id)}">Ver ficha</button></div>`;
   } else if (m.type === "player") {
     const p = S.players[m.id]; if (!p) { S.modal = null; root.replaceChildren(); return; }
     const hist = scoredMds().filter((md) => md.stats?.[p.id]?.played).reverse();
-    inner = `<div class="row spread"><div class="who">${avatar(p, 64)}<div><h3>${esc(p.name)}</h3><small class="muted"><span class="pos ${esc(p.pos)}">${esc(p.pos)}</span> ${esc(POS[p.pos]?.n || "")} ${p.dorsal ? "· dorsal " + esc(p.dorsal) : ""}</small></div></div><div style="text-align:right">${ovr(p)}<br><small class="muted">media</small></div></div>
+    inner = `<div class="row spread"><div class="who">${avatar(p, 72)}${photoAv(p, 56)}<div><h3>${esc(p.name)} ${armband(p)}</h3><small class="muted"><span class="pos ${esc(p.pos)}">${esc(p.pos)}</span> ${esc(POS[p.pos]?.n || "")} ${p.dorsal ? "· dorsal " + esc(p.dorsal) : ""}</small></div></div><div style="text-align:right">${ovr(p)}<br><small class="muted">media</small></div></div>
       <div class="budget"><div><span class="eyebrow">Puntos</span><b class="num">${seasonPts(p)}</b></div><div><span class="eyebrow">Valor</span><b class="num">${money(priceOf(p))}</b></div><div><span class="eyebrow">Lo tienen</span><b class="num">${ownership(p.id)}%</b></div></div>
       ${trend(p) ? `<div>Último partido: ${trend(p)}</div>` : ""}
       ${hist.length ? `<div class="list">${hist.map((md) => `<div class="item"><div><b>J${esc(md.number)} vs ${esc(md.rival || "")}</b><br><small class="muted">${breakdown(p, md).map(([l, v]) => `${esc(l)} ${v > 0 ? "+" : ""}${v}`).join(" · ")} · media ${mediaDelta(p, md) >= 0 ? "+" : "−"}${Math.abs(mediaDelta(p, md))}</small></div>${ptsEl(playerPts(p, md))}</div>`).join("")}</div>` : `<p class="muted">Todavía no ha jugado ninguna jornada con resultado.</p>`}`;
@@ -715,7 +743,7 @@ function renderModal() {
       <div class="row"><button class="btn" data-act="saves-inc" data-v="-1" ${v ? "" : "disabled"}>Quitar una</button><span class="muted" style="font-size:13px">Suma ${Math.floor(v / 3)} punto${Math.floor(v / 3) === 1 ? "" : "s"} (1 cada 3 paradas). Al terminar, cierra y pulsa "Guardar jornada".</span></div>`;
   } else if (m.type === "edit") {
     const e = m.draft;
-    inner = `<h3>Editar jugador</h3><div class="row">${avatar(e, 64)}${S.assets ? `<label class="btn small" for="ed-photo">Subir foto</label><input id="ed-photo" type="file" accept="image/*" hidden>${e.photo ? `<button class="btn small" data-act="edit-nophoto">Quitar foto</button>` : ""}` : `<span class="muted" style="font-size:13px">Las fotos se pueden subir siendo editor de la página.</span>`}</div>
+    inner = `<h3>Editar jugador</h3><div class="row">${avatar(e, 64)}${photoAv(e, 56)}${S.assets ? `<label class="btn small" for="ed-photo">Subir foto</label><input id="ed-photo" type="file" accept="image/*" hidden>${e.photo ? `<button class="btn small" data-act="edit-nophoto">Quitar foto</button>` : ""}` : `<span class="muted" style="font-size:13px">Las fotos se pueden subir siendo editor de la página.</span>`}</div>
       <div class="fields"><div class="field"><label for="ed-name">Nombre</label><input id="ed-name" data-bind="modal.draft.name" value="${esc(e.name)}"></div>
       <div class="field"><label for="ed-pos">Posición</label><select id="ed-pos" data-bind="modal.draft.pos">${POS_ORDER.map((k) => `<option ${e.pos === k ? "selected" : ""}>${k}</option>`).join("")}</select></div>
       <div class="field"><label for="ed-dorsal">Dorsal</label><input id="ed-dorsal" data-bind="modal.draft.dorsal" value="${esc(e.dorsal)}"></div>
@@ -745,7 +773,7 @@ const actions = {
     const clash = Object.values(S.signups).find((x) => x.id !== S.uid && +x.dorsal === dorsal);
     if (clash) return toast(`El dorsal ${dorsal} ya lo tiene ${clash.name}`);
     const prev = S.signups[S.uid];
-    write(async () => { await S.db.doc("signups/" + S.uid).set({ name: name.slice(0, 30), dorsal: String(dorsal), pos: j.pos, joinedAt: prev?.joinedAt || new Date().toISOString() }); S.join = null; S.editJoin = false; }, prev ? "Datos guardados" : "¡Apuntado!");
+    write(async () => { await S.db.doc("signups/" + S.uid).set({ name: name.slice(0, 30), dorsal: String(dorsal), pos: j.pos, isCaptain: !!prev?.isCaptain, joinedAt: prev?.joinedAt || new Date().toISOString() }); S.join = null; S.editJoin = false; }, prev ? "Datos guardados" : "¡Apuntado!");
   },
   "join-edit": () => { S.editJoin = true; S.join = null; render(); },
   "join-cancel": () => { S.editJoin = false; S.join = null; render(); },
@@ -758,7 +786,7 @@ const actions = {
     const media = Math.max(1, Math.min(99, Math.round(+a.startMedia || MEDIA_INICIAL))); const p50 = defaultPriceFor(budget, a.formato);
     const su = Object.values(S.signups);
     write(async () => {
-      for (const x of su) if (!S.players[x.id]) await S.db.doc("players/" + x.id).set({ name: x.name, pos: x.pos, dorsal: x.dorsal, media });
+      for (const x of su) if (!S.players[x.id]) await S.db.doc("players/" + x.id).set({ name: x.name, pos: x.pos, dorsal: x.dorsal, media, isCaptain: !!x.isCaptain });
       const { startMedia, ...rest } = a;
       await S.db.doc("league/config").set({ ...(S.cfg || {}), ...rest, name: (a.name || "Liga Fantasy").slice(0, 50), club: (a.club || "").slice(0, 50), budget, price50: p50, startMedia: media, started: true, startedAt: new Date().toISOString() });
       S.adminCfg = null; location.hash = "equipo";
@@ -766,7 +794,7 @@ const actions = {
   },
   "signups-add": () => {
     const pend = Object.values(S.signups).filter((x) => !S.players[x.id]); const media = +S.cfg?.startMedia || MEDIA_INICIAL;
-    write(async () => { for (const x of pend) await S.db.doc("players/" + x.id).set({ name: x.name, pos: x.pos, dorsal: x.dorsal, media }); }, `${pend.length} añadidos al mercado`);
+    write(async () => { for (const x of pend) await S.db.doc("players/" + x.id).set({ name: x.name, pos: x.pos, dorsal: x.dorsal, media, isCaptain: !!x.isCaptain }); }, `${pend.length} añadidos al mercado`);
   },
   "show-player": (el) => { S.modal = { type: "player", id: el.dataset.id }; renderModal(); },
   "show-team": (el) => { S.modal = { type: "team", id: el.dataset.id }; renderModal(); },
@@ -812,6 +840,26 @@ const actions = {
   "player-add": () => {
     const np = S.newPlayer; if (!np.name.trim()) { toast("Escribe el nombre del jugador"); return; }
     write(async () => { await S.db.doc("players/" + rid("p")).set({ name: np.name.trim().slice(0, 40), pos: np.pos, dorsal: String(np.dorsal || "").slice(0, 3), media: Math.max(1, Math.min(99, Math.round(+np.media || +S.cfg?.startMedia || MEDIA_INICIAL))) }); S.newPlayer = { name: "", pos: np.pos, dorsal: "", media: "" }; }, `${np.name.trim()} añadido`);
+  },
+  "cap-toggle": (el) => {
+    const col = el.dataset.col; const id = el.dataset.id; const cur = (col === "players" ? S.players : S.signups)[id];
+    const on = !cur?.isCaptain;
+    write(async () => {
+      await S.db.doc(col + "/" + id).update({ isCaptain: on });
+      const other = col === "players" ? S.signups[id] : S.players[id];
+      if (other) await S.db.doc((col === "players" ? "signups/" : "players/") + id).update({ isCaptain: on });
+    }, on ? `${cur?.name} es capitán` : `${cur?.name} ya no es capitán`);
+  },
+  "league-end": () => {
+    if (!S.confirmEnd) { S.confirmEnd = true; render(); setTimeout(() => { if (S.confirmEnd) { S.confirmEnd = false; render(); } }, 6000); return; }
+    S.confirmEnd = false;
+    write(async () => {
+      for (const t of Object.keys(S.teams)) await S.db.doc("teams/" + t).delete();
+      for (const m of Object.keys(S.mds)) await S.db.doc("matchdays/" + m).delete();
+      for (const p of Object.keys(S.players)) await S.db.doc("players/" + p).delete();
+      await S.db.doc("league/config").set({ ...(S.cfg || {}), started: false, endedAt: new Date().toISOString() });
+      S.draft = null; S.mdDraft = {}; S.adminCfg = null; location.hash = "inicio";
+    }, "Liga finalizada. Los apuntados siguen en la lista para volver a empezar.");
   },
   "saves-open": (el) => { S.modal = { type: "saves", md: el.dataset.md, id: el.dataset.id }; renderModal(); },
   "saves-inc": (el) => {
