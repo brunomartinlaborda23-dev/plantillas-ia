@@ -14,6 +14,8 @@ Clon:    pip install chatterbox-tts   (descarga el modelo de Hugging Face; va en
 import json, os, subprocess, sys, tempfile, wave
 import soundfile as sf
 
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 VOZ = "em_alex"
 VELOCIDAD = 1.0
 
@@ -73,9 +75,21 @@ class VozClonada:
         self.m = ChatterboxMultilingualTTS.from_pretrained(device="cpu")
 
     def decir(self, texto, ruta):
-        wav = self.m.generate(texto, language_id="es", audio_prompt_path=self.ref,
-                              exaggeration=CLON_EXAGERACION, cfg_weight=CLON_CFG)
-        sf.write(ruta, wav.squeeze(0).cpu().numpy(), self.m.sr)
+        import torch
+        esperado = len(texto) / 14.0          # ~14 caracteres por segundo hablando
+        mejor = None
+        for intento in range(4):
+            torch.manual_seed(7 + intento)
+            wav = self.m.generate(texto, language_id="es", audio_prompt_path=self.ref,
+                                  exaggeration=CLON_EXAGERACION, cfg_weight=CLON_CFG)
+            d = wav.shape[-1] / self.m.sr
+            err = abs(d / esperado - 1.0)
+            if mejor is None or err < mejor[0]:
+                mejor = (err, wav)
+            if 0.65 < d / esperado < 1.6:       # duración razonable: ni cortada ni con huecos
+                break
+            print(f"   reintento ({d:.1f}s, esperado ~{esperado:.1f}s)")
+        sf.write(ruta, mejor[1].squeeze(0).cpu().numpy(), self.m.sr)
 
 
 # Solo un toque de cuerpo y presencia; sin cambiar el tono para que suene humana
