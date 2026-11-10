@@ -13,6 +13,7 @@
 </head>
 <body>
 <canvas id="c" width="1080" height="1920"></canvas>
+<script src="timeline.js"></script>
 <script>
 // ============================================================
 //  ¿Y SI LA TIERRA EXPLOTARA?  — animación vertical 1080x1920
@@ -422,7 +423,24 @@ function scene7(t){ // 59-66 final
 }
 
 // ============================================================
-function renderAt(t){
+// Línea de tiempo de la narración: convierte segundo de vídeo -> segundo de animación
+const TL = window.TIMELINE || {total:DUR, anchors:[[0,0],[DUR,DUR]]};
+const VDUR = TL.total;
+function interp(x, from, to){
+  const A=TL.anchors;
+  for(let i=1;i<A.length;i++){
+    if(x<=A[i][from]||i===A.length-1){
+      const k=(x-A[i-1][from])/((A[i][from]-A[i-1][from])||1);
+      return A[i-1][to]+(A[i][to]-A[i-1][to])*clamp(k);
+    }
+  }
+}
+const videoToAnim = v => interp(v,1,0);
+const animToVideo = a => interp(a,0,1);
+window.animToVideo = animToVideo;
+
+function renderAt(vt){
+  const t = videoToAnim(vt);
   ctx.setTransform(1,0,0,1,0,0);
   ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
   if(t<5) scene0(t);
@@ -439,15 +457,15 @@ function renderAt(t){
   fade=Math.max(fade,1-t/0.4,1-(DUR-t)/0.6);
   if(fade>0){ctx.fillStyle=`rgba(0,0,0,${clamp(fade)})`; ctx.fillRect(0,0,W,H);}
   // barra de progreso
-  ctx.fillStyle='rgba(255,216,74,0.85)'; ctx.fillRect(0,0,W*t/DUR,8);
+  ctx.fillStyle='rgba(255,216,74,0.85)'; ctx.fillRect(0,0,W*vt/VDUR,8);
 }
-window.renderAt=renderAt; window.DUR=DUR;
+window.renderAt=renderAt; window.DUR=VDUR;
 
 // reproducción en el navegador
 if(!location.search.includes('render')){
   let start=performance.now();
   cv.addEventListener('click',()=>start=performance.now());
-  (function loop(now){ renderAt(((now-start)/1000)%DUR); requestAnimationFrame(loop); })(start);
+  (function loop(now){ renderAt(((now-start)/1000)%VDUR); requestAnimationFrame(loop); })(start);
 } else document.body.classList.add('render');
 </script>
 </body>

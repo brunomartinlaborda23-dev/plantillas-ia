@@ -11,14 +11,15 @@ const DIR = __dirname;
 const FPS = 30;
 const args = process.argv.slice(2);
 
-function makeAudio(out, dur) {
+function makeAudio(out, dur, boom = 16, rumble = 11) {
+  const b = boom.toFixed(2), r = rumble.toFixed(2), bms = Math.round(boom * 1000);
   // Dron grave + rumor creciente + explosión a los 16 s
   const fc = [
     '[0]volume=0.16[a0]',
     '[1]volume=0.07,tremolo=f=0.25:d=0.6[a1]',
-    "[2]lowpass=f=260,volume='if(between(t,11,16),0.05+(t-11)/5*0.9,if(lt(t,16),0.05,0.04))':eval=frame[a2]",
-    '[3]lowpass=f=160,afade=t=out:st=0.2:d=6,volume=2.4,adelay=16000:all=1[a3]',
-    '[4]afade=t=out:st=0:d=4.5,volume=0.9,adelay=16000:all=1[a4]',
+    `[2]lowpass=f=260,volume='if(between(t,${r},${b}),0.05+(t-${r})/(${b}-${r})*0.9,if(lt(t,${b}),0.05,0.04))':eval=frame[a2]`,
+    `[3]lowpass=f=160,afade=t=out:st=0.2:d=6,volume=2.4,adelay=${bms}:all=1[a3]`,
+    `[4]afade=t=out:st=0:d=4.5,volume=0.9,adelay=${bms}:all=1[a4]`,
     `[a0][a1][a2][a3][a4]amix=inputs=5:normalize=0,alimiter=limit=0.9,afade=t=in:d=1.2,afade=t=out:st=${dur - 2}:d=2,aformat=channel_layouts=stereo:sample_rates=44100[mus]`,
   ];
   const narr = path.join(DIR, 'narracion.wav');
@@ -39,21 +40,22 @@ function makeAudio(out, dur) {
 }
 
 (async () => {
-  if (args[0] === '--solo-audio') {
-    // Rehace solo el sonido (p. ej. tras cambiar la narración) sin volver a grabar la imagen
-    const out = path.join(DIR, 'tierra-explota.mp4'), tmp = path.join(DIR, 'tmp.mp4'), audio = path.join(DIR, 'audio.wav');
-    makeAudio(audio, 66);
-    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', out, '-i', audio, '-map', '0:v', '-map', '1:a',
-      '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', tmp]);
-    fs.renameSync(tmp, out); fs.unlinkSync(audio);
-    console.log('Listo:', out);
-    return;
-  }
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 }, deviceScaleFactor: 1 });
   await page.goto('file://' + path.join(DIR, 'index.html') + '?render=1');
   await page.evaluate(() => document.fonts.ready);
   const dur = await page.evaluate(() => window.DUR);
+  const [boom, rumble] = await page.evaluate(() => [animToVideo(16), animToVideo(11)]);
+  if (args[0] === '--solo-audio') {
+    // Rehace solo el sonido sin volver a grabar la imagen (si la línea de tiempo no cambió)
+    const out = path.join(DIR, 'tierra-explota.mp4'), tmp = path.join(DIR, 'tmp.mp4'), audio = path.join(DIR, 'audio.wav');
+    makeAudio(audio, dur, boom, rumble);
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', out, '-i', audio, '-map', '0:v', '-map', '1:a',
+      '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', tmp]);
+    fs.renameSync(tmp, out); fs.unlinkSync(audio); await browser.close();
+    console.log('Listo:', out);
+    return;
+  }
   const grab = (t) => page.evaluate((t) => { renderAt(t); return document.getElementById('c').toDataURL('image/jpeg', 0.93); }, t);
 
   if (args[0] === '--preview') {
@@ -67,7 +69,7 @@ function makeAudio(out, dur) {
   }
 
   const audio = path.join(DIR, 'audio.wav');
-  makeAudio(audio, dur);
+  makeAudio(audio, dur, boom, rumble);
   const out = path.join(DIR, 'tierra-explota.mp4');
   const ff = spawn('ffmpeg', ['-y', '-loglevel', 'error',
     '-f', 'image2pipe', '-framerate', String(FPS), '-c:v', 'mjpeg', '-i', '-',

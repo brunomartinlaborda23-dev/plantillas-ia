@@ -1,64 +1,105 @@
-"""Genera narracion.wav (voz masculina) sincronizada con la animación.
+"""Genera la narración (voz masculina) y la línea de tiempo del vídeo.
 
 Uso:  python3 narrar.py RUTA/es_ES-davefx-medium.onnx
-Necesita: pip install piper-tts, y ffmpeg.
-Cada frase tiene un hueco [inicio, fin] en segundos; si la voz no cabe,
-se acelera un poco (máx. 1.3x) para que no se pise con la siguiente escena.
-"""
-import json, subprocess, sys, tempfile, wave, os
+Salida: narracion.wav  +  timeline.js (la animación se adapta al ritmo de la voz)
 
-DUR = 66
+La voz NUNCA se acelera: cada frase se lee a su ritmo natural, con pausas
+de lectura entre frases, y es la animación la que se estira o encoge un poco
+para que cada texto aparezca justo cuando la voz lo dice.
+Necesita: pip install piper-tts, y ffmpeg (con rubberband).
+"""
+import json, os, subprocess, sys, tempfile, wave
+
+ANIM_DUR = 66          # duración original de la animación (index.html)
+LEAD = 0.12            # el texto aparece un pelín antes que la voz
+MIN_RATIO = 0.8        # la animación nunca va a más de 1/0.8 = 1.25x
+PAUSA_FRASE = 0.32     # pausa entre frases de la misma escena
+PAUSA_ESCENA = 0.6     # pausa al cambiar de escena
+
+# (segundo de la animación donde aparece el texto, frase, ¿empieza escena?)
+# texto=None -> momento sin voz (la explosión)
 GUION = [
-    (0.3, 4.9, "¿Y si la Tierra explotara? Esto es lo que pasaría."),
-    (5.2, 9.3, "Romper la Tierra no es nada fácil. Su propia gravedad la mantiene unida."),
-    (9.5, 14.0, "Haría falta tanta energía como la que emite el Sol entero durante una semana."),
-    (14.1, 15.9, "Pero imagina que ocurre..."),
-    (18.2, 21.0, "Toda la vida desaparecería en segundos."),
-    (20.5, 24.4, "Los trozos saldrían disparados a más de cuarenta mil kilómetros por hora."),
-    (24.5, 28.5, "El destello viajaría a la velocidad de la luz."),
-    (28.6, 31.4, "Llegaría al Sol en ocho minutos y veinte segundos."),
-    (31.5, 34.1, "Y a Marte, en unos dieciséis minutos."),
-    (34.4, 36.2, "¿Y la Luna?"),
-    (36.3, 39.5, "Recibiría una lluvia de escombros."),
-    (39.7, 43.1, "Y seguiría girando alrededor del Sol... sola."),
-    (43.4, 47.5, "Los restos se repartirían por toda la órbita de la Tierra,"),
-    (47.6, 51.9, "formando un anillo de rocas alrededor del Sol."),
-    (52.2, 54.4, "¿Y los demás planetas?"),
-    (54.5, 58.9, "Casi nada cambiaría. La Tierra es diminuta comparada con el Sol."),
-    (59.1, 62.5, "Un nuevo cinturón de asteroides, donde antes estaba nuestro hogar."),
-    (62.6, 65.8, "Tranquilo: nada cerca tiene tanta energía. Sígueme para más."),
+    (0.3,  "¿Y si la Tierra... explotara?", True),
+    (1.6,  "Esto es lo que pasaría.", False),
+    (5.2,  "Romper la Tierra no es nada fácil: su propia gravedad la mantiene unida.", True),
+    (9.5,  "Haría falta tanta energía como la que emite el Sol entero durante una semana.", False),
+    (14.1, "Pero imagina... que ocurre.", True),
+    (16.0, None, False),                       # ¡BOOM! (silencio de voz)
+    (18.2, "Toda la vida desaparecería en cuestión de segundos.", True),
+    (21.1, "Y los trozos saldrían disparados a más de cuarenta mil kilómetros por hora.", False),
+    (24.5, "El destello viajaría a la velocidad de la luz.", True),
+    (28.6, "Llegaría al Sol en ocho minutos y veinte segundos.", False),
+    (31.5, "Y a Marte, en unos dieciséis minutos.", False),
+    (34.4, "¿Y la Luna?", True),
+    (36.3, "Recibiría una lluvia de escombros.", False),
+    (39.7, "Y después, seguiría girando alrededor del Sol... completamente sola.", False),
+    (43.4, "Con el tiempo, los restos se repartirían por toda la órbita de la Tierra.", True),
+    (47.6, "Y formarían un enorme anillo de rocas alrededor del Sol.", False),
+    (52.2, "¿Y los demás planetas?", True),
+    (54.5, "Casi nada cambiaría. La Tierra es diminuta comparada con el Sol.", False),
+    (59.1, "Al final, nacería un nuevo cinturón de asteroides, justo donde antes estaba nuestro hogar.", True),
+    (62.6, "Pero tranquilo: no hay nada cerca con tanta energía. Sígueme para más.", False),
 ]
-# Voz más grave y con presencia: bajar ~1,5 semitonos, realce de graves, compresión
-VOZ_FX = ("asetrate=22050*0.915,aresample=44100,atempo=1/0.915,"
-          "bass=g=4:f=140,equalizer=f=3000:t=q:w=1:g=2,"
-          "acompressor=threshold=-20dB:ratio=3:attack=5:release=80,volume=1.6")
+BOOM_SILENCIO = 0.45   # pausa entre "que ocurre" y la explosión
+
+PIPER = ["--length-scale", "1.0", "--noise-scale", "0.6", "--noise-w-scale", "0.9",
+         "--sentence-silence", "0.28"]
+# Un poco más grave conservando el timbre natural + cuerpo y presencia
+VOZ_FX = ("aresample=44100,rubberband=pitch=0.94:formant=preserved:pitchq=quality,"
+          "highpass=f=70,bass=g=3:f=150,equalizer=f=3200:t=q:w=1.2:g=2,"
+          "acompressor=threshold=-22dB:ratio=2.5:attack=8:release=120,"
+          "silenceremove=start_periods=1:start_threshold=-50dB,areverse,"
+          "silenceremove=start_periods=1:start_threshold=-50dB,areverse,"
+          "volume=1.5")
+
 
 def dur(path):
     with wave.open(path) as w:
         return w.getnframes() / w.getframerate()
 
+
 def main(model):
     here = os.path.dirname(os.path.abspath(__file__))
     tmp = tempfile.mkdtemp()
-    inputs, filters = [], []
-    for i, (a, b, texto) in enumerate(GUION):
+    anchors = [[0.0, 0.0]]
+    clips = []                         # (archivo, inicio en el vídeo)
+    voz_fin = 0.0
+    prev_a, prev_v = 0.0, 0.0
+    for i, (a, texto, escena) in enumerate(GUION):
+        pausa = BOOM_SILENCIO if texto is None else (PAUSA_ESCENA if escena else PAUSA_FRASE)
+        if i == 0:
+            pausa = 0.35
+        v = max(voz_fin + pausa, prev_v + (a - prev_a) * MIN_RATIO)
+        if texto is None:
+            anchors.append([a, v]); prev_a, prev_v = a, v; voz_fin = v + 1.4  # deja respirar el boom
+            continue
         raw, fx = f"{tmp}/r{i}.wav", f"{tmp}/f{i}.wav"
-        subprocess.run([sys.executable, "-m", "piper", "-m", model, "-f", raw,
-                        "--length-scale", "0.92", "--sentence-silence", "0.15"],
+        subprocess.run([sys.executable, "-m", "piper", "-m", model, "-f", raw, *PIPER],
                        input=texto.encode(), check=True, capture_output=True)
-        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", raw, "-af",
-                        VOZ_FX + ",silenceremove=start_periods=1:start_threshold=-45dB,areverse,"
-                        "silenceremove=start_periods=1:start_threshold=-45dB,areverse", fx], check=True)
-        d, hueco = dur(fx), b - a
-        tempo = min(1.3, d / hueco) if d > hueco else 1.0
-        print(f"{a:5.1f}s  {d:4.2f}s / {hueco:4.2f}s  x{tempo:.2f}  {texto}")
-        inputs += ["-i", fx]
-        filters.append(f"[{i}]atempo={tempo:.3f},adelay={int(a*1000)}:all=1[v{i}]")
-    mix = "".join(f"[v{i}]" for i in range(len(GUION)))
-    filters.append(f"{mix}amix=inputs={len(GUION)}:normalize=0,apad,atrim=0:{DUR},aformat=channel_layouts=stereo:sample_rates=44100[out]")
-    subprocess.run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", ";".join(filters),
+        subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", raw, "-af", VOZ_FX, fx], check=True)
+        d = dur(fx)
+        anchors.append([a, max(prev_v + 0.05, v - LEAD)])
+        clips.append((fx, v))
+        print(f"vídeo {v:6.2f}s  ({d:4.2f}s)  {texto}")
+        voz_fin = v + d
+        prev_a, prev_v = a, v
+    total = round(max(voz_fin + 1.3, prev_v + (ANIM_DUR - prev_a) * MIN_RATIO), 2)
+    anchors.append([ANIM_DUR, total])
+
+    inputs, filt = [], []
+    for k, (f, v) in enumerate(clips):
+        inputs += ["-i", f]
+        filt.append(f"[{k}]adelay={int(v * 1000)}:all=1[c{k}]")
+    filt.append("".join(f"[c{k}]" for k in range(len(clips))) +
+                f"amix=inputs={len(clips)}:normalize=0,apad,atrim=0:{total},"
+                "aformat=channel_layouts=stereo:sample_rates=44100[out]")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", *inputs, "-filter_complex", ";".join(filt),
                     "-map", "[out]", os.path.join(here, "narracion.wav")], check=True)
-    print("Listo: narracion.wav")
+    with open(os.path.join(here, "timeline.js"), "w") as fh:
+        fh.write("// Generado por narrar.py: [segundo de animación, segundo de vídeo]\n")
+        fh.write("window.TIMELINE = " + json.dumps({"total": total, "anchors": anchors}) + ";\n")
+    print(f"Listo: narracion.wav + timeline.js  (vídeo de {total:.1f} s)")
+
 
 if __name__ == "__main__":
     main(sys.argv[1])
