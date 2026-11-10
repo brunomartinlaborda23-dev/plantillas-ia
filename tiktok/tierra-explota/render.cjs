@@ -1,5 +1,6 @@
 // Graba index.html a MP4 vertical 1080x1920 (30 fps) con sonido.
-// Uso:  node render.cjs                 -> tierra-explota.mp4
+// Uso:  node render.cjs                 -> tierra-explota.mp4 (usa narracion.wav si existe)
+//       node render.cjs --solo-audio    -> rehace solo el sonido del MP4
 //       node render.cjs --preview 3,17,30 -> PNGs de esos segundos
 const { chromium } = require('playwright');
 const { spawn, execFileSync } = require('child_process');
@@ -18,18 +19,36 @@ function makeAudio(out, dur) {
     "[2]lowpass=f=260,volume='if(between(t,11,16),0.05+(t-11)/5*0.9,if(lt(t,16),0.05,0.04))':eval=frame[a2]",
     '[3]lowpass=f=160,afade=t=out:st=0.2:d=6,volume=2.4,adelay=16000:all=1[a3]',
     '[4]afade=t=out:st=0:d=4.5,volume=0.9,adelay=16000:all=1[a4]',
-    `[a0][a1][a2][a3][a4]amix=inputs=5:normalize=0,alimiter=limit=0.9,afade=t=in:d=1.2,afade=t=out:st=${dur - 2}:d=2,aformat=channel_layouts=stereo[out]`,
-  ].join(';');
+    `[a0][a1][a2][a3][a4]amix=inputs=5:normalize=0,alimiter=limit=0.9,afade=t=in:d=1.2,afade=t=out:st=${dur - 2}:d=2,aformat=channel_layouts=stereo:sample_rates=44100[mus]`,
+  ];
+  const narr = path.join(DIR, 'narracion.wav');
+  const extra = [];
+  if (fs.existsSync(narr)) {
+    // con narración: la música baja automáticamente cuando habla la voz
+    extra.push('-i', narr);
+    fc.push('[5]asplit=2[vz][key]', '[mus][key]sidechaincompress=threshold=0.03:ratio=6:attack=20:release=400[duck]',
+      '[duck][vz]amix=inputs=2:normalize=0,alimiter=limit=0.95[out]');
+  } else fc.push('[mus]anull[out]');
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error',
     '-f', 'lavfi', '-i', `sine=f=55:d=${dur}:sample_rate=44100`,
     '-f', 'lavfi', '-i', `sine=f=82.41:d=${dur}:sample_rate=44100`,
     '-f', 'lavfi', '-i', `anoisesrc=color=brown:d=${dur}:a=0.5:r=44100`,
     '-f', 'lavfi', '-i', 'anoisesrc=color=brown:d=7:a=0.9:r=44100',
     '-f', 'lavfi', '-i', 'sine=f=38:d=6:sample_rate=44100',
-    '-filter_complex', fc, '-map', '[out]', '-t', String(dur), out]);
+    ...extra, '-filter_complex', fc.join(';'), '-map', '[out]', '-t', String(dur), out]);
 }
 
 (async () => {
+  if (args[0] === '--solo-audio') {
+    // Rehace solo el sonido (p. ej. tras cambiar la narración) sin volver a grabar la imagen
+    const out = path.join(DIR, 'tierra-explota.mp4'), tmp = path.join(DIR, 'tmp.mp4'), audio = path.join(DIR, 'audio.wav');
+    makeAudio(audio, 66);
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', out, '-i', audio, '-map', '0:v', '-map', '1:a',
+      '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', tmp]);
+    fs.renameSync(tmp, out); fs.unlinkSync(audio);
+    console.log('Listo:', out);
+    return;
+  }
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1080, height: 1920 }, deviceScaleFactor: 1 });
   await page.goto('file://' + path.join(DIR, 'index.html') + '?render=1');
