@@ -14,6 +14,7 @@
 <body>
 <canvas id="c" width="1080" height="1920"></canvas>
 <script src="timeline.js"></script>
+<script src="subtitulos.js"></script>
 <script>
 // ============================================================
 //  ¿Y SI LA TIERRA EXPLOTARA?  — animación vertical 1080x1920
@@ -201,7 +202,7 @@ function label(text,x,y,size=34,color='rgba(255,255,255,0.85)',a=1){
 // ---------- vista del sistema solar (compartida) ----------
 const SUN={x:540,y:1120}, R_V=215, R_E=330, R_M=455;
 const EXP={x:SUN.x, y:SUN.y-R_E};          // donde estaba la Tierra
-const venusA=t=>2.3+t*0.09, marsA=t=>0.35+t*0.025;
+const venusA=t=>2.3+t*0.09, marsA=t=>1.975+t*0.025;
 function planet(a,r){return {x:SUN.x+Math.cos(a)*r,y:SUN.y+Math.sin(a)*r};}
 
 function systemBase(t,opts={}){
@@ -245,7 +246,6 @@ function scene0(t){ // 0-5 gancho
   drawEarth(cx,cy,r,t*0.35);
   if(Math.sin(ma)>=0) drawMoon(mx,my,48,t);
   caption(t,0.05,5,[{text:'¿Y SI LA TIERRA',size:96},{text:'EXPLOTARA?',size:132,color:'#ffd84a'}],360);
-  caption(t,1.6,5,[{text:'Esto es lo que pasaría...',size:58,color:'#cfe3ff'}],1560);
 }
 
 function scene1(t){ // 5-14 energía
@@ -257,7 +257,7 @@ function scene1(t){ // 5-14 energía
   caption(t,9.4,14,[{text:'Haría falta',size:62},{text:'2 × 10³² julios',size:110,color:'#ffd84a'},{text:'Lo que emite el Sol en 1 semana',size:54,color:'#ffb36b'}],360);
   // barra de energía
   const k=easeInOut(prog(t,6,13));
-  const bx=140,by=1500,bw=800,bh=44;
+  const bx=140,by=1395,bw=800,bh=44;
   ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.fillRect(bx,by,bw,bh);
   const g=ctx.createLinearGradient(bx,0,bx+bw,0); g.addColorStop(0,'#ffd84a'); g.addColorStop(.6,'#ff8a1f'); g.addColorStop(1,'#ff2a1f');
   ctx.fillStyle=g; ctx.fillRect(bx,by,bw*k,bh);
@@ -317,7 +317,7 @@ function scene3(t){ // 24-34 la luz
   // nube de escombros diminuta
   glow(EXP.x,EXP.y,40,[255,140,60],0.7);
   for(let i=0;i<60;i++){const f=FRAGS[i]; ctx.fillStyle=rgba(fragColor(0.5),0.9); ctx.beginPath(); ctx.arc(EXP.x+Math.cos(f.a)*f.s*28,EXP.y+Math.sin(f.a)*f.s*28,1.6,0,TAU); ctx.fill();}
-  label('TIERRA',EXP.x,EXP.y-60,28,'rgba(150,200,255,0.9)');
+  label('TIERRA',EXP.x,EXP.y+62,28,'rgba(150,200,255,0.9)');
   // frente de luz
   ctx.save(); ctx.globalCompositeOperation='lighter';
   for(let k=0;k<3;k++){
@@ -329,9 +329,9 @@ function scene3(t){ // 24-34 la luz
   const secs=Math.round(lr/R_E*500);
   const mm=String(Math.floor(secs/60)).padStart(2,'0'), ss=String(secs%60).padStart(2,'0');
   ctx.save(); ctx.globalAlpha=win(t,24,34,0.4);
-  ctx.fillStyle='rgba(0,0,0,0.55)'; roundRect(390,1640,300,96,22); ctx.fill();
+  ctx.fillStyle='rgba(0,0,0,0.55)'; roundRect(390,640,300,96,22); ctx.fill();
   ctx.restore();
-  label(`${mm}:${ss}`,540,1690,62,'#fff',win(t,24,34,0.4));
+  label(`${mm}:${ss}`,540,690,62,'#fff',win(t,24,34,0.4));
   caption(t,24,28.5,[{text:'El destello viaja a la',size:70},{text:'velocidad de la luz',size:84,color:'#fff3a8'}],360);
   caption(t,28.5,31.4,[{text:'Llega al Sol en',size:70},{text:'8 min 20 s',size:100,color:'#ffd84a'}],360);
   caption(t,31.4,34,[{text:'Y a Marte, en unos',size:70},{text:'16 minutos',size:100,color:'#ff9a72'}],360);
@@ -369,8 +369,8 @@ function scene4(t){ // 34-43 la Luna
   ctx.restore();
   label('LUNA',mx,my+mr+42,30,'rgba(255,255,255,0.85)');
   caption(t,34,36.2,[{text:'¿Y la Luna?',size:110,color:'#e6e6ff'}],360);
-  caption(t,36.2,39.6,[{text:'Recibiría una lluvia',size:76},{text:'de escombros',size:92,color:'#ffb36b'}],1480);
-  caption(t,39.6,43,[{text:'Y seguiría girando',size:70},{text:'alrededor del Sol...',size:70},{text:'SOLA',size:120,color:'#9fd0ff'}],1420);
+  caption(t,36.2,39.6,[{text:'Recibiría una lluvia',size:76},{text:'de escombros',size:92,color:'#ffb36b'}],320);
+  caption(t,39.6,43,[{text:'Y seguiría girando',size:70},{text:'alrededor del Sol...',size:70},{text:'SOLA',size:120,color:'#9fd0ff'}],270);
 }
 
 function scene5(t){ // 43-52 el anillo
@@ -385,8 +385,8 @@ function scene5(t){ // 43-52 el anillo
   if(years<1000) txt='+ '+Math.round(years)+(Math.round(years)===1?' año':' años');
   else if(years<1e6) txt='+ '+Math.round(years/1000)+'.000 años';
   else txt='+ 1 millón de años';
-  ctx.save(); ctx.globalAlpha=win(t,43.2,52,0.4); ctx.fillStyle='rgba(0,0,0,0.55)'; roundRect(270,1640,540,96,22); ctx.fill(); ctx.restore();
-  label(txt,540,1690,54,'#ffd84a',win(t,43.2,52,0.4));
+  ctx.save(); ctx.globalAlpha=win(t,43.2,52,0.4); ctx.fillStyle='rgba(0,0,0,0.55)'; roundRect(270,640,540,96,22); ctx.fill(); ctx.restore();
+  label(txt,540,690,54,'#ffd84a',win(t,43.2,52,0.4));
   caption(t,43,47.5,[{text:'Los restos se reparten',size:74},{text:'por la órbita de la Tierra',size:62,color:'#cfe3ff'}],360);
   caption(t,47.5,52,[{text:'Formando un',size:70},{text:'anillo de rocas',size:100,color:'#ffb36b'},{text:'alrededor del Sol',size:70}],340);
 }
@@ -456,8 +456,35 @@ function renderAt(vt){
   for(const c of [24,34,43]) fade=Math.max(fade,1-Math.abs(t-c)/0.35);
   fade=Math.max(fade,1-t/0.4,1-(DUR-t)/0.6);
   if(fade>0){ctx.fillStyle=`rgba(0,0,0,${clamp(fade)})`; ctx.fillRect(0,0,W,H);}
+  // subtítulos palabra a palabra (estilo karaoke)
+  karaoke(vt);
   // barra de progreso
   ctx.fillStyle='rgba(255,216,74,0.85)'; ctx.fillRect(0,0,W*vt/VDUR,8);
+}
+// ---------- subtítulos karaoke ----------
+const SUBS = window.SUBS || [];
+function karaoke(vt){
+  const g = SUBS.find(g => vt >= g.t && vt < g.e);
+  if(!g) return;
+  const pop = easeBack(prog(vt, g.t, g.t+0.18));
+  const size = 88;
+  ctx.save();
+  ctx.font = `900 ${size}px ${FONT}`; ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.lineJoin='round';
+  const sp = ctx.measureText(' ').width;
+  const ws = g.w.map(w => ({...w, wd: ctx.measureText(w.w).width}));
+  let total = ws.reduce((a,w)=>a+w.wd,0) + sp*(ws.length-1);
+  const sc = Math.min(1, 980/total) * (0.85 + 0.15*pop);
+  ctx.translate(540, 1600); ctx.scale(sc, sc);
+  let x = -total/2;
+  for(const w of ws){
+    const activa = vt >= w.t;
+    const actual = activa && (ws.indexOf(w)===ws.length-1 || vt < ws[ws.indexOf(w)+1].t);
+    ctx.lineWidth = size*0.22; ctx.strokeStyle='rgba(0,0,0,0.95)'; ctx.strokeText(w.w, x, 0);
+    ctx.fillStyle = actual ? '#ffd84a' : (activa ? '#ffffff' : 'rgba(255,255,255,0.55)');
+    ctx.fillText(w.w, x, 0);
+    x += w.wd + sp;
+  }
+  ctx.restore();
 }
 window.renderAt=renderAt; window.DUR=VDUR;
 
