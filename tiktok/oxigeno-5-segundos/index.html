@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>¿Y si el oxígeno desapareciera 5 segundos?</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;}
+  body{display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  canvas{height:100vh;max-width:100vw;aspect-ratio:9/16;display:block;cursor:pointer;}
+  body.render canvas{height:auto;width:1080px;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// =====================================================================
+//  ¿Y SI EL OXÍGENO DESAPARECIERA 5 SEGUNDOS?  — vídeo vertical 1080x1920
+//  Sin voz: texto + música. Todo determinista: renderAt(t).
+// =====================================================================
+const W=1080, H=1920, DUR=72;
+const T_GONE=10, T_BACK=55, SLOW=9;          // 5 s reales = 45 s de vídeo (x9)
+const cv=document.getElementById('c'), ctx=cv.getContext('2d');
+const SANS='Inter, "Helvetica Neue", Arial, sans-serif';
+const SERIF='Caladea, Georgia, "Times New Roman", serif';
+const MONO='"JetBrains Mono", "DejaVu Sans Mono", Menlo, Consolas, monospace';
+const TAU=Math.PI*2;
+
+function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const rnd=mulberry(5021);
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const prog=(t,a,b)=>clamp((t-a)/(b-a));
+const lerp=(a,b,k)=>a+(b-a)*k;
+const easeOut=k=>1-Math.pow(1-k,3);
+const easeInOut=k=>k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2;
+function win(t,a,b,f=0.35){if(t<a||t>b)return 0;return Math.min(1,(t-a)/f,(b-t)/f);}
+const rgba=(c,a)=>`rgba(${c[0]},${c[1]},${c[2]},${a})`;
+function glow(x,y,r,c,a){const g=ctx.createRadialGradient(x,y,0,x,y,r);g.addColorStop(0,rgba(c,a));g.addColorStop(1,rgba(c,0));ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,TAU);ctx.fill();}
+function rr(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+
+// nivel de oxígeno en el aire (1 = normal, 0 = desaparecido)
+function o2(t){ return 1 - prog(t,T_GONE,T_GONE+0.8) + prog(t,T_BACK,T_BACK+0.6); }
+
+// ---------------- datos del mundo ----------------
+const STARS=Array.from({length:160},()=>({x:rnd()*W,y:rnd()*700,r:rnd()*1.4+0.3,p:rnd()*TAU}));
+const BUILD=[]; { let x=-20; while(x<W+20){ const w=60+rnd()*90, h=110+rnd()*170; const win=[];
+  for(let wy=1260-h+22; wy<1240; wy+=30) for(let wx=x+12; wx<x+w-16; wx+=22) if(rnd()<0.38) win.push([wx,wy,rnd()]);
+  BUILD.push({x,w,h,win,tone:rnd()}); x+=w+4+rnd()*10; } }
+const AIR=Array.from({length:330},()=>({x:rnd()*W,y:rnd()*H,vx:(rnd()-.5)*14,vy:(rnd()-.5)*10,p:rnd()*TAU,a:rnd()*TAU,o:rnd()<0.21,d:0.6+rnd()*0.4}));
+const SMOKE=Array.from({length:26},()=>({dx:(rnd()-.5)*30,s:0.5+rnd(),p:rnd()*TAU,t0:rnd()*6}));
+
+// ---------------- dibujo del mundo ----------------
+function sky(t){
+  const g=ctx.createLinearGradient(0,0,0,1300);
+  g.addColorStop(0,'#070a1f'); g.addColorStop(.35,'#1b1940'); g.addColorStop(.62,'#4a2c5e'); g.addColorStop(.82,'#c4566a'); g.addColorStop(1,'#f39a5a');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,1300);
+  for(const s of STARS){ctx.fillStyle=`rgba(255,255,255,${(0.3+0.5*Math.sin(t*1.3+s.p)**2)*(1-s.y/700)})`;ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,TAU);ctx.fill();}
+}
+const SUN={x:810,y:1010};
+function sun(t){
+  glow(SUN.x,SUN.y,420,[255,140,80],0.45); glow(SUN.x,SUN.y,170,[255,200,120],0.8);
+  ctx.fillStyle='#ffe2a8'; ctx.beginPath(); ctx.arc(SUN.x,SUN.y,72,0,TAU); ctx.fill();
+}
+function uvRays(t,uv){
+  if(uv>0){ // rayos UV sin filtrar
+    ctx.save(); ctx.globalCompositeOperation='lighter'; ctx.lineWidth=5; ctx.setLineDash([26,18]); ctx.lineDashOffset=-t*120;
+    for(let i=0;i<11;i++){ const a=Math.PI*(0.55+i*0.055); const L=1100;
+      ctx.strokeStyle=`rgba(200,120,255,${0.6*uv})`; ctx.beginPath(); ctx.moveTo(SUN.x,SUN.y); ctx.lineTo(SUN.x+Math.cos(a)*L, SUN.y+Math.sin(a)*L); ctx.stroke(); }
+    glow(SUN.x,SUN.y,260,[190,110,255],0.35*uv);
+    small('RADIACIÓN ULTRAVIOLETA',SUN.x-170,SUN.y-150,22,`rgba(220,170,255,${uv})`,'center',3);
+    ctx.setLineDash([]); ctx.restore();
+  }
+}
+function ozone(t,lvl,showLabel){
+  const y=400;
+  if(lvl>0){ ctx.save(); ctx.globalCompositeOperation='lighter';
+    const g=ctx.createLinearGradient(0,y-30,0,y+30); g.addColorStop(0,'rgba(80,200,255,0)'); g.addColorStop(.5,`rgba(110,220,255,${0.35*lvl})`); g.addColorStop(1,'rgba(80,200,255,0)');
+    ctx.fillStyle=g; ctx.fillRect(0,y-30,W,60); ctx.restore(); }
+  if(showLabel>0){
+    ctx.save(); ctx.globalAlpha=showLabel; ctx.setLineDash([14,12]); ctx.strokeStyle='rgba(140,220,255,0.8)'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); ctx.setLineDash([]);
+    small(lvl>0.5?'CAPA DE OZONO':'CAPA DE OZONO · DESAPARECIDA',540,y-34,24,'rgba(170,230,255,0.95)'); ctx.restore();
+  }
+}
+function plane(t){
+  const x=140+t*14, y=560+Math.sin(t*0.4)*6;
+  // motores: apagados durante la ausencia; los pilotos los reencienden a los ~4 s de volver
+  const eng = 1 - prog(t,T_GONE,T_GONE+1.2) + prog(t,T_BACK+4,T_BACK+5.5);
+  // estela
+  const g=ctx.createLinearGradient(x-420,0,x-40,0); g.addColorStop(0,'rgba(255,255,255,0)'); g.addColorStop(1,`rgba(255,255,255,${0.35*eng})`);
+  ctx.strokeStyle=g; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(x-420,y+4); ctx.lineTo(x-40,y+4); ctx.stroke();
+  // avión
+  ctx.save(); ctx.translate(x,y); ctx.fillStyle='#d9dbe8';
+  ctx.beginPath(); ctx.ellipse(0,0,46,7,0,0,TAU); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-6,0); ctx.lineTo(-22,26); ctx.lineTo(-10,26); ctx.lineTo(12,0); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-36,-2); ctx.lineTo(-48,-18); ctx.lineTo(-40,-18); ctx.lineTo(-26,-2); ctx.fill();
+  ctx.fillStyle='#ff5050'; ctx.beginPath(); ctx.arc(-46,-18,2.5,0,TAU); ctx.fill();
+  if(eng>0.02){ ctx.globalCompositeOperation='lighter'; glow(-20,16,22,[255,160,60],0.9*eng); }
+  ctx.restore();
+  return {x,y};
+}
+function city(t){
+  for(const b of BUILD){
+    const top=1260-b.h; const c=Math.round(16+b.tone*10);
+    ctx.fillStyle=`rgb(${c},${c+4},${c+22})`; ctx.fillRect(b.x,top,b.w,b.h);
+    for(const [wx,wy,k] of b.win){ ctx.fillStyle=`rgba(255,${200+k*40|0},${120+k*60|0},${0.55+0.4*k})`; ctx.fillRect(wx,wy,10,14); }
+  }
+}
+// coche: el motor se cala al desaparecer el oxígeno y sigue rodando por inercia
+function carX(t){ const v=170; if(t<T_GONE) return 60+v*t; return 60+v*T_GONE + v*6*(1-Math.exp(-(t-T_GONE)/6)); }
+function car(t){
+  const x=((carX(t)+200)%(W+400))-200, y=1312;
+  const on=t<T_GONE?1:(1-prog(t,T_GONE,T_GONE+0.6));
+  // escape
+  if(on>0) for(let i=0;i<6;i++){ const k=((t*1.4+i/6)%1); ctx.fillStyle=`rgba(180,180,190,${0.25*(1-k)*on})`; ctx.beginPath(); ctx.arc(x-84-k*60,y+8-k*14,6+k*14,0,TAU); ctx.fill(); }
+  // luces (batería: siguen encendidas)
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  const g=ctx.createLinearGradient(x+70,0,x+330,0); g.addColorStop(0,'rgba(255,240,180,0.45)'); g.addColorStop(1,'rgba(255,240,180,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(x+70,y-4); ctx.lineTo(x+330,y-34); ctx.lineTo(x+330,y+30); ctx.closePath(); ctx.fill();
+  glow(x-74,y-2,16,[255,40,40],0.8); ctx.restore();
+  ctx.fillStyle='#2b3b73'; rr(x-78,y-18,156,30,10); ctx.fill();
+  ctx.fillStyle='#22305e'; rr(x-44,y-40,86,26,10); ctx.fill();
+  ctx.fillStyle='rgba(150,200,255,0.35)'; rr(x-36,y-36,32,18,5); ctx.fill(); rr(x+2,y-36,32,18,5); ctx.fill();
+  ctx.fillStyle='#0a0a12'; for(const wx of [-46,46]){ctx.beginPath();ctx.arc(x+wx,y+12,13,0,TAU);ctx.fill();}
+}
+function street(t){
+  ctx.fillStyle='#0d1020'; ctx.fillRect(0,1260,W,90);
+  ctx.strokeStyle='rgba(255,220,140,0.35)'; ctx.lineWidth=4; ctx.setLineDash([40,30]);
+  ctx.beginPath(); ctx.moveTo(0,1340); ctx.lineTo(W,1340); ctx.stroke(); ctx.setLineDash([]);
+}
+function terrace(t){
+  // barandilla
+  ctx.fillStyle='#07070f'; ctx.fillRect(0,1350,W,H-1350);
+  ctx.strokeStyle='#1d1a2e'; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(0,1372); ctx.lineTo(W,1372); ctx.stroke();
+  for(let x=20;x<W;x+=60){ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(x,1372);ctx.lineTo(x,1450);ctx.stroke();}
+  // mesa
+  ctx.fillStyle='#231d33'; rr(250,1500,580,26,12); ctx.fill();
+  ctx.fillStyle='#161222'; ctx.fillRect(520,1526,40,240);
+  // vaso de agua
+  ctx.fillStyle='rgba(170,210,255,0.25)'; rr(520,1430,44,70,6); ctx.fill();
+  ctx.fillStyle='rgba(120,180,255,0.35)'; rr(522,1458,40,40,5); ctx.fill();
+  for(const cx of [400,690]) candle(t,cx);
+}
+function candle(t,cx){
+  ctx.fillStyle='#efe6d2'; rr(cx-20,1440,40,62,6); ctx.fill();
+  ctx.strokeStyle='#222'; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(cx,1440); ctx.lineTo(cx,1428); ctx.stroke();
+  // llama: se apaga al desaparecer el oxígeno y NO vuelve sola
+  const f = 1 - easeOut(prog(t,T_GONE,T_GONE+2.2));
+  if(f>0.01){
+    const fl=1+Math.sin(t*23+cx)*0.06;
+    ctx.save(); ctx.globalCompositeOperation='lighter'; glow(cx,1408,90*f,[255,170,70],0.55*f); ctx.restore();
+    ctx.save(); ctx.translate(cx,1428); ctx.scale(f*fl, f);
+    const g=ctx.createRadialGradient(0,-14,2,0,-14,26); g.addColorStop(0,'#fffbe0'); g.addColorStop(.5,'#ffc04a'); g.addColorStop(1,'rgba(255,90,20,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.moveTo(0,-46); ctx.quadraticCurveTo(16,-18,9,-4); ctx.quadraticCurveTo(0,4,-9,-4); ctx.quadraticCurveTo(-16,-18,0,-46); ctx.fill();
+    ctx.restore();
+  }
+  // humo tras apagarse
+  if(t>T_GONE+0.6){
+    for(const s of SMOKE){ const k=((t-T_GONE-0.6)*0.18*s.s+s.t0/6)%1; const fade=Math.max(0,1-(t-T_GONE-0.6)/22);
+      ctx.fillStyle=`rgba(200,200,215,${0.16*(1-k)*fade})`; ctx.beginPath(); ctx.arc(cx+Math.sin(k*6+s.p)*14+s.dx*k, 1426-k*260, 4+k*16,0,TAU); ctx.fill(); }
+  }
+}
+function air(t){
+  const lvl=o2(t);
+  for(const p of AIR){
+    const x=((p.x+p.vx*t+Math.sin(t*0.35+p.p)*18)%W+W)%W, y=((p.y+p.vy*t+Math.cos(t*0.3+p.p)*18)%H+H)%H;
+    const a=p.a+t*0.6*(p.vx>0?1:-1);
+    const dx=Math.cos(a), dy=Math.sin(a);
+    if(p.o){
+      if(lvl<=0.001) continue;
+      const pop = (t>T_GONE&&t<T_GONE+0.8)? 1+ (t-T_GONE)*1.5 : (t>T_BACK&&t<T_BACK+0.6? 1+(T_BACK+0.6-t)*2 : 1);
+      ctx.save(); ctx.globalCompositeOperation='lighter';
+      glow(x,y,22*pop,[80,190,255],0.35*lvl*p.d); ctx.restore();
+      ctx.fillStyle=`rgba(110,205,255,${0.95*lvl*p.d})`;
+      const r=5.5*pop*p.d;
+      ctx.beginPath(); ctx.arc(x+dx*r,y+dy*r,r,0,TAU); ctx.arc(x-dx*r,y-dy*r,r,0,TAU); ctx.fill();
+    } else {
+      ctx.fillStyle=`rgba(150,158,180,${0.32*p.d})`; const r=3.6*p.d;
+      ctx.beginPath(); ctx.arc(x+dx*r,y+dy*r,r,0,TAU); ctx.arc(x-dx*r,y-dy*r,r,0,TAU); ctx.fill();
+    }
+  }
+}
+
+// ---------------- HUD y textos ----------------
+function small(text,x,y,size,color,align='center',spacing=4){
+  ctx.save(); ctx.font=`700 ${size}px ${SANS}`; ctx.fillStyle=color; ctx.textAlign=align; ctx.textBaseline='middle';
+  if('letterSpacing' in ctx) ctx.letterSpacing=spacing+'px';
+  ctx.shadowColor='rgba(0,0,0,0.8)'; ctx.shadowBlur=8; ctx.fillText(text,x,y); ctx.restore();
+}
+function caption(t,a,b,text,opt={}){
+  const al=win(t,a,b,0.4); if(al<=0) return;
+  const y=opt.y??900, size=opt.size??58;
+  ctx.save(); ctx.globalAlpha=al; ctx.font=`italic 400 ${size}px ${SERIF}`; ctx.textAlign='center'; ctx.textBaseline='middle';
+  const words=text.split(' '), rows=[]; let cur='';
+  for(const w of words){const tt=cur?cur+' '+w:w; if(ctx.measureText(tt).width>900&&cur){rows.push(cur);cur=w;}else cur=tt;} rows.push(cur);
+  const lh=size*1.25, y0=y-(rows.length-1)*lh/2 + (1-easeOut(prog(t,a,a+0.6)))*16;
+  rows.forEach((r,i)=>{
+    ctx.shadowColor='rgba(0,0,0,0.95)'; ctx.shadowBlur=18; ctx.fillStyle='#ffffff';
+    if(opt.hl && r.includes(opt.hl)){ // palabra resaltada
+      const [pre,post]=r.split(opt.hl); const wp=ctx.measureText(pre).width, wh=ctx.measureText(opt.hl).width, wt=ctx.measureText(r).width;
+      let x=540-wt/2; ctx.textAlign='left';
+      ctx.fillText(pre,x,y0+i*lh); ctx.fillStyle='#7fd3ff'; ctx.fillText(opt.hl,x+wp,y0+i*lh); ctx.fillStyle='#fff'; ctx.fillText(post,x+wp+wh,y0+i*lh); ctx.textAlign='center';
+    } else ctx.fillText(r,540,y0+i*lh);
+  });
+  ctx.restore();
+}
+function fmt(s){ s=Math.max(0,s); const m=Math.floor(s/60), r=s-m*60; return `${m}:${r.toFixed(3).padStart(6,'0')}`; }
+function timer(t){
+  let label, val, sub, col='#ffffff';
+  if(t<T_GONE){ label='EL OXÍGENO DESAPARECE EN'; val=T_GONE-t; sub='EL 21% DEL AIRE QUE RESPIRAS'; }
+  else if(t<T_BACK){ label='EL OXÍGENO VUELVE EN'; val=5-(t-T_GONE)/SLOW; sub=`TIEMPO RALENTIZADO ×${SLOW}`; col='#7fd3ff'; }
+  else { label='EL OXÍGENO HA VUELTO'; val=0; sub='TIEMPO NORMAL'; }
+  const a=win(t,3.2,DUR-5.2,0.5); if(a<=0) return;
+  ctx.save(); ctx.globalAlpha=a;
+  small(label,60,170,24,'rgba(255,255,255,0.85)','left',3);
+  ctx.font=`500 82px ${MONO}`; ctx.fillStyle=col; ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.shadowColor='rgba(0,0,0,0.8)'; ctx.shadowBlur=12;
+  ctx.fillText(fmt(val),56,240);
+  small(sub,60,306,20,'rgba(255,255,255,0.6)','left',3);
+  // icono O2
+  const lvl=o2(t);
+  ctx.globalCompositeOperation='lighter'; glow(990,214,40,[80,190,255],0.5*lvl); ctx.globalCompositeOperation='source-over';
+  ctx.fillStyle=`rgba(110,205,255,${0.25+0.75*lvl})`; ctx.beginPath(); ctx.arc(978,214,12,0,TAU); ctx.arc(1002,214,12,0,TAU); ctx.fill();
+  small('O₂',990,254,22,`rgba(255,255,255,${0.4+0.6*lvl})`,'center',1);
+  ctx.restore();
+}
+function card(t,a,b,draw){
+  const al=win(t,a,b,0.45); if(al<=0) return;
+  ctx.save(); ctx.globalAlpha=al; const k=0.94+0.06*easeOut(prog(t,a,a+0.5));
+  ctx.translate(540,560); ctx.scale(k,k);
+  ctx.fillStyle='rgba(8,10,24,0.72)'; rr(-320,-170,640,340,28); ctx.fill();
+  ctx.strokeStyle='rgba(127,211,255,0.35)'; ctx.lineWidth=2; rr(-320,-170,640,340,28); ctx.stroke();
+  draw(); ctx.restore();
+}
+function gauge(t){
+  const k=easeInOut(prog(t,24.6,26.4)); const atm=lerp(1.0,0.79,k);
+  small('PRESIÓN DEL AIRE',0,-128,24,'rgba(170,230,255,0.95)');
+  const cx=0, cy=55, R=120, a0=Math.PI*1.05, a1=Math.PI*1.95, v2a=v=>lerp(a0,a1,(v-0.6)/0.5);
+  ctx.lineWidth=16; ctx.lineCap='round';
+  ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.beginPath(); ctx.arc(cx,cy,R,a0,a1); ctx.stroke();
+  ctx.strokeStyle='#7fd3ff'; ctx.beginPath(); ctx.arc(cx,cy,R,a0,v2a(atm)); ctx.stroke();
+  const na=v2a(atm); ctx.strokeStyle='#fff'; ctx.lineWidth=6; ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+Math.cos(na)*(R-30),cy+Math.sin(na)*(R-30)); ctx.stroke();
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(cx,cy,10,0,TAU); ctx.fill();
+  ctx.font=`500 54px ${MONO}`; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#fff'; ctx.fillText(atm.toFixed(2)+' atm',0,cy+56);
+  small(k>0.98?'−21% DE GOLPE':'',0,cy+100,22,'#ffb3a0');
+}
+function ear(t){
+  small('TUS OÍDOS',0,-128,24,'rgba(170,230,255,0.95)');
+  ctx.save(); ctx.translate(-20,30); ctx.strokeStyle='#ffd7c2'; ctx.lineWidth=12; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(-30,70); ctx.bezierCurveTo(-90,40,-80,-90,10,-100); ctx.bezierCurveTo(90,-104,100,-10,50,20); ctx.bezierCurveTo(20,40,20,70,-10,90); ctx.stroke();
+  ctx.lineWidth=9; ctx.beginPath(); ctx.moveTo(-20,-40); ctx.bezierCurveTo(10,-70,50,-50,40,-20); ctx.bezierCurveTo(30,0,0,0,0,20); ctx.stroke();
+  ctx.restore();
+  for(let i=0;i<3;i++){ const k=((t-31)*0.9+i/3)%1; ctx.strokeStyle=`rgba(255,180,150,${0.8*(1-k)})`; ctx.lineWidth=5;
+    ctx.beginPath(); ctx.arc(110,30,30+k*120,-0.9,0.9); ctx.stroke(); }
+}
+function titleCard(t,a,b,l1,l2,l3){
+  const al=win(t,a,b,0.5); if(al<=0) return;
+  ctx.save(); ctx.globalAlpha=al; ctx.fillStyle='#05060d'; ctx.fillRect(0,0,W,H);
+  air(t*0.5);
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.shadowColor='rgba(0,0,0,0.9)'; ctx.shadowBlur=20;
+  ctx.font=`400 92px ${SERIF}`; ctx.fillStyle='#fff'; ctx.fillText(l1[0],540,830);
+    ctx.save(); ctx.font=`700 132px ${SERIF}`; const wa=ctx.measureText(l1[1]?l1[1]+' ':'').width, wb=ctx.measureText(l1[2]).width;
+  ctx.textAlign='left'; ctx.fillText(l1[1]?l1[1]+' ':'',540-(wa+wb)/2,960); ctx.fillStyle='#7fd3ff'; ctx.shadowColor='rgba(80,190,255,0.6)'; ctx.shadowBlur=40; ctx.fillText(l1[2],540-(wa+wb)/2+wa,960); ctx.restore();
+  ctx.textAlign='center'; ctx.fillStyle='#fff'; ctx.font=`400 80px ${SERIF}`; ctx.fillText(l2,540,1090);
+  small(l3,540,1200,26,'rgba(255,255,255,0.65)','center',4);
+  ctx.restore();
+}
+
+// ---------------- escena completa ----------------
+function renderAt(t){
+  ctx.setTransform(1,0,0,1,0,0); ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
+  // golpe de presión (sacudida) al desaparecer y al volver
+  const shake = Math.max(0,1-Math.abs(t-T_GONE-0.1)/0.5)*10 + Math.max(0,1-Math.abs(t-T_BACK-0.1)/0.5)*12;
+  ctx.save(); ctx.translate(Math.sin(t*90)*shake, Math.cos(t*77)*shake);
+  // cámara: zoom suave según la escena
+  const z = 1.04 + 0.04*Math.sin(t*0.08);
+  ctx.translate(540,960); ctx.scale(z,z); ctx.translate(-540,-960);
+  sky(t);
+  const ozLvl = o2(t);
+  ozone(t, ozLvl, win(t,36,43,0.5));
+  sun(t);
+  plane(t);
+  city(t); street(t); car(t); terrace(t);
+  uvRays(t, win(t,37.5,43,0.6));
+  ctx.restore();
+  // velo inferior para el texto de TikTok
+  const vg=ctx.createLinearGradient(0,1560,0,H); vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.85)'); ctx.fillStyle=vg; ctx.fillRect(0,1560,W,H-1560);
+  air(t);
+  // destellos
+  const fl = Math.max(0,1-(t-T_GONE)/0.6)*(t>=T_GONE) *0.35 + Math.max(0,1-(t-T_BACK)/0.6)*(t>=T_BACK)*0.35;
+  if(fl>0){ctx.fillStyle=`rgba(170,225,255,${fl})`;ctx.fillRect(0,0,W,H);}
+
+  timer(t);
+  // ---- textos ----
+  caption(t,3.4,6.6,'Estás en una terraza, al atardecer.');
+  caption(t,6.6,10,'1 de cada 5 moléculas del aire es oxígeno.',{hl:'oxígeno.'});
+  caption(t,10.2,13.6,'Y de repente... desaparece.',{size:64});
+  caption(t,13.6,18.6,'Al instante, se apagan todas las llamas de la Tierra.');
+  caption(t,18.6,24,'Los motores de coches y aviones se paran. Sin oxígeno, no hay combustión.');
+  card(t,24.2,31,()=>gauge(t));
+  caption(t,24.4,27.6,'El aire pierde de golpe una quinta parte de su presión.');
+  caption(t,27.6,31,'Como subir 2.000 metros en un instante.');
+  card(t,31.2,36,()=>ear(t));
+  caption(t,31.4,36,'Tus oídos notan un golpe seco, como en un avión... pero de repente.');
+  caption(t,36.2,39.8,'El ozono también es oxígeno: la capa que nos protege, desaparece.',{hl:'ozono'});
+  caption(t,39.8,43.2,'Durante 5 segundos, el Sol nos llega sin filtro ultravioleta.');
+  caption(t,43.4,47,'¿Te asfixiarías? No: aguantas sin respirar mucho más de 5 segundos.');
+  caption(t,47,50.6,'Pero si justo cogieras aire... ese aire sin oxígeno podría marearte.');
+  caption(t,50.8,55,'Y entonces...',{size:64});
+  caption(t,55.2,59,'Vuelve el oxígeno. Y otro golpe en los oídos.',{hl:'oxígeno.'});
+  caption(t,59,62.8,'Pero las velas no se vuelven a encender solas.');
+  caption(t,62.8,66.8,'Y esto solo era el oxígeno del aire. El agua y las rocas también están hechas de oxígeno...');
+  titleCard(t,66.8,DUR+1,['¿Y si desapareciera','TODO el','oxígeno?'],'Parte 2','SÍGUEME PARA NO PERDÉRTELA');
+  titleCard(t,-1,3.2,['¿Y si el','','OXÍGENO'],'desapareciera 5 segundos?','EL 21% DEL AIRE QUE RESPIRAS');
+  // barra de progreso
+  ctx.fillStyle='rgba(127,211,255,0.85)'; ctx.fillRect(0,0,W*t/DUR,6);
+  // fundido final
+  const f=prog(t,DUR-0.6,DUR); if(f>0){ctx.fillStyle=`rgba(0,0,0,${f})`;ctx.fillRect(0,0,W,H);}
+}
+window.renderAt=renderAt; window.DUR=DUR; window.EVENTS={gone:T_GONE,back:T_BACK};
+
+if(!location.search.includes('render')){
+  let start=performance.now(); cv.addEventListener('click',()=>start=performance.now());
+  (function loop(now){renderAt(((now-start)/1000)%DUR);requestAnimationFrame(loop);})(start);
+} else document.body.classList.add('render');
+</script>
+</body>
+</html>
