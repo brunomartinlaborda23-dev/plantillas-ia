@@ -1,0 +1,1028 @@
+<title>Liga Fantasy del Vestuario</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&family=Barlow:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: marcador arriba, pestañas, una columna de contenido; el campo de césped es la pieza protagonista de "Mi equipo". */
+:root {
+  --bg: #edf1ea;
+  --surface: #ffffff;
+  --surface-2: #f5f8f3;
+  --ink: #12211a;
+  --muted: #5a6a61;
+  --line: #d4ddd3;
+  --grass: #1e7442;
+  --grass-dark: #175c34;
+  --chalk: #f3f8f1;
+  --card: #e6c11d;
+  --card-ink: #2b2405;
+  --good: #1c7a3f;
+  --bad: #b8322a;
+  --scoreboard: #12211a;
+  --scoreboard-ink: #f3f8f1;
+  --f-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --r: 10px;
+  --kit-white: #fbfbf8;
+  --kit-red: #c81e2c;
+  --kit-ink: #14171c;
+  --kit-edge: #9aa39c;
+  --kit-bot: #d9dedb;
+  --kit-bot-2: #9ca69f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1511; --surface: #14211a; --surface-2: #192920; --ink: #e5eee7; --muted: #94a79b; --line: #26382e;
+    --grass: #1b6a3c; --grass-dark: #14532e; --chalk: #e9f2ea; --card: #edcc2c; --card-ink: #231d03;
+    --good: #4fbf78; --bad: #ef6b5f; --scoreboard: #060c09; --scoreboard-ink: #e9f2ea; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1511; --surface: #14211a; --surface-2: #192920; --ink: #e5eee7; --muted: #94a79b; --line: #26382e;
+  --grass: #1b6a3c; --grass-dark: #14532e; --chalk: #e9f2ea; --card: #edcc2c; --card-ink: #231d03;
+  --good: #4fbf78; --bad: #ef6b5f; --scoreboard: #060c09; --scoreboard-ink: #e9f2ea; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.45; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--scoreboard); }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--card); outline-offset: 2px; }
+.wrap { max-width: 960px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* Marcador */
+header.top { background: var(--scoreboard); color: var(--scoreboard-ink); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; }
+.top .wrap { display: flex; flex-direction: column; gap: 10px; padding-block: 14px 0; }
+.brand { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand h1 { margin: 0; font-family: var(--f-display); font-weight: 800; font-size: clamp(26px, 5vw, 36px); line-height: 1; text-transform: uppercase; letter-spacing: .01em; text-wrap: balance; }
+.brand h1 span { color: var(--card); }
+.brand .sub { font-size: 13px; opacity: .75; letter-spacing: .04em; text-transform: uppercase; }
+nav.tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; }
+nav.tabs::-webkit-scrollbar { display: none; }
+nav.tabs a { flex: 0 0 auto; padding: 10px 14px 11px; color: inherit; text-decoration: none; font-family: var(--f-display); font-weight: 700; font-size: 17px; letter-spacing: .04em; text-transform: uppercase; opacity: .6; border-bottom: 3px solid transparent; }
+nav.tabs a[aria-current="page"] { opacity: 1; border-bottom-color: var(--card); }
+nav.tabs a:hover { opacity: 1; }
+
+main { padding-block: 22px 60px; display: flex; flex-direction: column; gap: 22px; }
+h2 { font-family: var(--f-display); font-weight: 800; font-size: 26px; line-height: 1.05; margin: 0; text-transform: uppercase; letter-spacing: .01em; text-wrap: balance; }
+h3 { font-family: var(--f-display); font-weight: 700; font-size: 19px; margin: 0; text-transform: uppercase; letter-spacing: .03em; }
+.eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); }
+.muted { color: var(--muted); }
+.section { display: flex; flex-direction: column; gap: 12px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.spread { justify-content: space-between; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 16px; align-items: start; }
+.grid2 > * { min-width: 0; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); padding: 9px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; text-decoration: none; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--grass); border-color: var(--grass); color: var(--chalk); }
+.btn.primary:hover { background: var(--grass-dark); }
+.btn.danger { color: var(--bad); }
+.btn.small { padding: 5px 10px; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field label { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.field input, .field select, .field textarea { background: var(--surface-2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; width: 100%; }
+.field textarea { min-height: 130px; resize: vertical; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+
+/* Tablas */
+.tablebox { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+th { font-size: 12px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); }
+td.r, th.r { text-align: right; }
+.rank { font-family: var(--f-display); font-weight: 800; font-size: 20px; width: 40px; }
+tr.me td { background: color-mix(in srgb, var(--card) 14%, transparent); }
+.big { font-family: var(--f-display); font-weight: 800; font-size: 22px; }
+
+/* Ficha de jugador (avatar) */
+.av { --size: 40px; width: var(--size); height: var(--size); border-radius: 50%; flex: 0 0 auto; display: grid; place-items: center; background: var(--grass); color: var(--chalk); font-family: var(--f-display); font-weight: 800; font-size: calc(var(--size) * .42); overflow: hidden; border: 2px solid var(--surface); }
+.av img { width: 100%; height: 100%; object-fit: cover; }
+.pos { display: inline-block; min-width: 38px; text-align: center; font-size: 11px; font-weight: 700; letter-spacing: .06em; padding: 2px 6px; border-radius: 4px; background: var(--surface-2); border: 1px solid var(--line); }
+.pos.POR { background: color-mix(in srgb, var(--card) 30%, var(--surface)); }
+.pos.DEF { background: color-mix(in srgb, #3a7bd5 22%, var(--surface)); }
+.pos.MED { background: color-mix(in srgb, var(--grass) 25%, var(--surface)); }
+.pos.DEL { background: color-mix(in srgb, var(--bad) 22%, var(--surface)); }
+.who { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.who b { display: block; overflow: hidden; text-overflow: ellipsis; }
+.who small { color: var(--muted); }
+
+/* Campo */
+.pitch { position: relative; border-radius: 14px; overflow: hidden; padding: 22px 10px; display: flex; flex-direction: column; gap: 18px; min-height: 460px; justify-content: space-around;
+  background: repeating-linear-gradient(180deg, var(--grass) 0 56px, var(--grass-dark) 56px 112px); }
+.pitch::before, .pitch::after { content: ""; position: absolute; pointer-events: none; border: 2px solid color-mix(in srgb, var(--chalk) 55%, transparent); }
+.pitch::before { inset: 10px; border-radius: 4px; background: linear-gradient(transparent calc(50% - 1px), color-mix(in srgb, var(--chalk) 55%, transparent) calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)); }
+.pitch::after { width: 110px; height: 110px; border-radius: 50%; left: calc(50% - 55px); top: calc(50% - 55px); }
+.line { position: relative; z-index: 1; display: flex; justify-content: space-evenly; gap: 6px; }
+.slot { width: 84px; display: flex; flex-direction: column; align-items: center; gap: 4px; background: none; border: 0; padding: 0; cursor: pointer; color: var(--chalk); }
+.slot .av { --size: 54px; box-shadow: 0 3px 10px rgb(0 0 0 / .3); border-color: var(--chalk); }
+.kit { --size: 44px; width: var(--size); height: var(--size); flex: 0 0 auto; display: inline-block; }
+.kit svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.slot .kit { --size: 60px; filter: drop-shadow(0 3px 5px rgb(0 0 0 / .35)); }
+.botslot .tag { background: color-mix(in srgb, var(--scoreboard) 70%, transparent); }
+.botslot .price { color: var(--card); }
+.dor { font-family: var(--f-display); font-weight: 800; color: var(--kit-red); margin-right: 2px; }
+.armband { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 4px; background: var(--card); color: var(--card-ink); font-size: 11px; font-weight: 800; vertical-align: 2px; margin-left: 2px; }
+.endbtn { background: transparent; color: var(--scoreboard-ink); border-color: color-mix(in srgb, var(--scoreboard-ink) 35%, transparent); }
+.endbtn:hover { border-color: var(--scoreboard-ink); }
+.endbtn.armed { background: var(--bad); border-color: var(--bad); color: #fff; }
+.slot.open .av { background: color-mix(in srgb, var(--chalk) 18%, transparent); border-style: dashed; font-size: 26px; }
+.slot .tag { background: var(--scoreboard); color: var(--scoreboard-ink); font-size: 12px; font-weight: 600; padding: 2px 7px; border-radius: 4px; max-width: 84px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slot .price { font-size: 11px; font-weight: 700; opacity: .9; }
+.slot .cap { position: absolute; transform: translate(24px, -6px); background: var(--card); color: var(--card-ink); font-weight: 800; font-size: 11px; width: 24px; height: 22px; border-radius: 50%; display: grid; place-items: center; }
+.slot .avwrap { position: relative; display: grid; place-items: center; }
+
+.budget { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border-radius: var(--r); overflow: hidden; border: 1px solid var(--line); }
+.budget div { background: var(--surface); padding: 10px 12px; }
+.budget b { display: block; font-family: var(--f-display); font-size: 24px; font-weight: 800; }
+.over b { color: var(--bad); }
+
+/* Partido / jornada */
+.match { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.score { font-family: var(--f-display); font-weight: 800; font-size: 40px; line-height: 1; background: var(--scoreboard); color: var(--scoreboard-ink); padding: 6px 14px; border-radius: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface-2); letter-spacing: .03em; }
+.chip.win { color: var(--good); border-color: currentColor; }
+.chip.loss { color: var(--bad); border-color: currentColor; }
+.chip.lock { background: var(--card); color: var(--card-ink); border-color: var(--card); }
+.pts { font-family: var(--f-display); font-weight: 800; font-size: 20px; }
+.pts.neg { color: var(--bad); }
+@media (max-width: 560px) { .hide-sm { display: none; } .tablebox .who .ovr + .kit { --size: 34px; } .trend { white-space: normal; } }
+.saves-count { font-family: var(--f-display); font-weight: 800; font-size: 96px; line-height: 1; text-align: center; }
+.saves-big { font-size: 22px; padding: 22px; font-family: var(--f-display); text-transform: uppercase; letter-spacing: .04em; }
+.ovr { flex: 0 0 auto; min-width: 30px; text-align: center; font-family: var(--f-display); font-weight: 800; font-size: 17px; line-height: 1; padding: 5px 4px 4px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink); font-variant-numeric: tabular-nums; }
+.ovr.silver { background: color-mix(in srgb, var(--muted) 22%, var(--surface)); }
+.ovr.gold { background: var(--card); color: var(--card-ink); border-color: var(--card); }
+.ovr.low { color: var(--bad); }
+.slot .ovr { position: absolute; transform: translate(-26px, -18px); font-size: 14px; min-width: 26px; padding: 3px; z-index: 1; }
+.trend { font-size: 11px; font-weight: 700; white-space: nowrap; }
+.trend.up { color: var(--good); }
+.trend.down { color: var(--bad); }
+.yc { display: inline-block; width: 9px; height: 13px; border-radius: 2px; background: var(--card); vertical-align: -2px; }
+.rc { display: inline-block; width: 9px; height: 13px; border-radius: 2px; background: var(--bad); vertical-align: -2px; }
+
+.list { display: flex; flex-direction: column; }
+.item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.item:last-child { border-bottom: 0; }
+.item > :first-child { min-width: 0; }
+.clickable { cursor: pointer; }
+.clickable:hover { background: var(--surface-2); }
+
+.empty { text-align: center; padding: 36px 16px; border: 2px dashed var(--line); border-radius: var(--r); display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.empty p { margin: 0; max-width: 46ch; }
+.note { padding: 10px 12px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); font-size: 14px; }
+.note.warn { border-color: var(--card); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); padding: 7px 12px; cursor: pointer; font-weight: 600; font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+/* Editor de jornada */
+.stats td { padding: 6px 8px; }
+.stats input[type="number"] { width: 54px; padding: 5px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-2); }
+.stats input[type="checkbox"] { width: 18px; height: 18px; }
+
+/* Hoja modal */
+.overlay { position: fixed; inset: 0; background: rgb(5 10 8 / .55); z-index: 20; display: flex; align-items: flex-end; justify-content: center; padding-top: max(40px, env(safe-area-inset-top, 0px)); }
+.sheet { background: var(--surface); width: min(560px, 100%); max-height: 100%; overflow-y: auto; border-radius: 16px 16px 0 0; padding: 18px max(16px, env(safe-area-inset-right, 0px)) calc(18px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; }
+@media (min-width: 640px) { .overlay { align-items: center; } .sheet { border-radius: 16px; max-height: 86vh; } }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; z-index: 30; font-weight: 600; max-width: calc(100% - 32px); }
+.rules { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; font-size: 14px; }
+.rules span:nth-child(even) { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: no-preference) { .slot .av, .slot .kit { transition: transform .15s; } .slot:hover .av, .slot:hover .kit { transform: translateY(-2px); } }
+</style>
+
+<header class="top">
+  <div class="wrap">
+    <div class="brand">
+      <h1 id="leagueName">Liga <span>Fantasy</span></h1>
+      <div class="row" style="gap:10px"><div class="sub" id="leagueSub">Cargando…</div><button class="btn small endbtn" id="endLeague" data-act="league-end" hidden>Finalizar liga</button></div>
+    </div>
+    <nav class="tabs" id="tabs" aria-label="Secciones">
+      <a href="#inicio">Clasificación</a>
+      <a href="#equipo">Mi equipo</a>
+      <a href="#mercado">Mercado</a>
+      <a href="#jornadas">Jornadas</a>
+      <a href="#reglas">Puntos</a>
+      <a href="#admin" id="tabAdmin" hidden>Admin</a>
+    </nav>
+  </div>
+</header>
+<main class="wrap" id="view">
+  <div class="empty"><h3>Cargando la liga</h3><p class="muted">Aquí aparecerán la clasificación, los equipos y las jornadas de vuestra liga.</p></div>
+</main>
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+
+<script>
+(() => {
+// ---------- Reglas del juego ----------
+const POS = {
+  POR: { n: "Portero", gol: 6, cero: 4, encaja: true },
+  DEF: { n: "Defensa", gol: 6, cero: 4, encaja: true },
+  MED: { n: "Centrocampista", gol: 5, cero: 1, encaja: false },
+  DEL: { n: "Delantero", gol: 4, cero: 0, encaja: false },
+};
+const POS_ORDER = ["POR", "DEF", "MED", "DEL"];
+const FORMATOS = {
+  f5:  { label: "Fútbol sala (1-1-2-1)", slots: { POR: 1, DEF: 1, MED: 2, DEL: 1 } },
+  f7:  { label: "Fútbol 7 (1-2-2-2)",    slots: { POR: 1, DEF: 2, MED: 2, DEL: 2 } },
+  f8:  { label: "Fútbol 8 (1-3-2-2)",    slots: { POR: 1, DEF: 3, MED: 2, DEL: 2 } },
+  f11: { label: "Fútbol 11 (1-4-4-2)",   slots: { POR: 1, DEF: 4, MED: 4, DEL: 2 } },
+};
+const DEFAULT_CFG = { name: "Liga Fantasy Colmenar Viejo", club: "Colmenar Viejo Cadete D", formato: "f11", budget: 30 };
+const MEDIA_INICIAL = 50; // todos empiezan con media 50; cada jornada jugada la media cambia (puntos − 3)
+const PRICE_STEP = 1.04;  // cada punto de media hace que el jugador valga un 4 % más
+
+const S = {
+  db: null, user: null, assets: null, uid: null, owner: false, canWrite: null,
+  cfg: null, players: {}, mds: {}, teams: {}, signups: {}, profiles: {}, join: null,
+  loaded: { cfg: false, players: false, mds: false, teams: false, signups: false }, offline: false, noDb: false,
+  draft: null, modal: null, mdDraft: {}, newPlayer: null, setup: null, marketPos: "ALL", marketSort: "pts",
+  openMd: null, pending: false, saving: false,
+};
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const rid = (p) => p + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
+const money = (n) => (Math.round((+n || 0) * 10) / 10).toLocaleString("es-ES", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " M";
+const cfg = () => ({ ...DEFAULT_CFG, ...(S.cfg || {}) });
+const slots = () => (FORMATOS[cfg().formato] || FORMATOS.f7).slots;
+const totalSlots = () => Object.values(slots()).reduce((a, b) => a + b, 0);
+const route = () => { const h = location.hash.slice(1); return ["inicio", "equipo", "mercado", "jornadas", "reglas", "admin"].includes(h) ? h : "inicio"; };
+
+function toast(msg) {
+  const el = document.createElement("div"); el.className = "toast"; el.textContent = msg; el.setAttribute("role", "status");
+  $("#toastRoot").replaceChildren(el); setTimeout(() => el.remove(), 2600);
+}
+
+// ---------- Puntuación ----------
+function hasResult(md) { return md && md.gf !== null && md.gf !== undefined && md.gf !== "" && md.ga !== null && md.ga !== undefined && md.ga !== ""; }
+function breakdown(p, md) {
+  const s = md?.stats?.[p.id]; const out = [];
+  if (!p || !s || !s.played || !hasResult(md)) return out;
+  const r = POS[p.pos] || POS.MED; const gf = +md.gf, ga = +md.ga;
+  out.push(["Jugó", 2]);
+  if (gf > ga) out.push(["Victoria", 1]);
+  if (gf < ga) out.push(["Derrota", -1]);
+  if (s.goals) out.push([`${s.goals} gol${s.goals > 1 ? "es" : ""}`, s.goals * r.gol]);
+  if (s.assists) out.push([`${s.assists} asistencia${s.assists > 1 ? "s" : ""}`, s.assists * 3]);
+  if (ga === 0 && r.cero) out.push(["Portería a cero", r.cero]);
+  if (r.encaja && ga >= 2) out.push([`${ga} goles encajados`, -Math.floor(ga / 2)]);
+  if (s.saves && p.pos === "POR") out.push([`${s.saves} paradas`, Math.floor(s.saves / 3)]);
+  if (s.mvp) out.push(["MVP del partido", 3]);
+  if (s.yellow) out.push([`${s.yellow} amarilla${s.yellow > 1 ? "s" : ""}`, -2 * s.yellow]);
+  if (s.red) out.push(["Roja", -4]);
+  if (s.og) out.push([`${s.og} en propia`, -2 * s.og]);
+  if (s.penMiss) out.push([`${s.penMiss} penalti fallado`, -2 * s.penMiss]);
+  if (+s.bonus) out.push(["Bonus del míster", +s.bonus]);
+  return out;
+}
+const playerPts = (p, md) => breakdown(p, md).reduce((a, [, v]) => a + v, 0);
+const mdList = () => Object.values(S.mds).sort((a, b) => (a.number || 0) - (b.number || 0));
+const scoredMds = () => mdList().filter(hasResult);
+const seasonPts = (p) => scoredMds().reduce((a, md) => a + playerPts(p, md), 0);
+function mediaDelta(p, md) {
+  if (!md?.stats?.[p.id]?.played || !hasResult(md)) return 0;
+  return Math.max(-8, Math.min(10, playerPts(p, md) - 3));
+}
+function mediaOf(p, uptoMd) {
+  if (!p) return MEDIA_INICIAL; let m = Number.isFinite(+p.media) && p.media !== "" && p.media != null ? +p.media : MEDIA_INICIAL;
+  for (const md of scoredMds()) { if (uptoMd && md.id === uptoMd) break; m = Math.max(1, Math.min(99, m + mediaDelta(p, md))); }
+  return m;
+}
+function price50() { return +S.cfg?.price50 || defaultPrice(); }
+function priceForMedia(m) { return Math.max(0.3, Math.round(price50() * Math.pow(PRICE_STEP, m - 50) * 10) / 10); }
+function priceOf(p) { return p ? priceForMedia(mediaOf(p)) : 0; }
+function lastMove(p) {
+  const md = scoredMds().filter((m) => m.stats?.[p.id]?.played).slice(-1)[0]; if (!md) return null;
+  const before = mediaOf(p, md.id); const after = Math.max(1, Math.min(99, before + mediaDelta(p, md)));
+  return { media: after - before, price: Math.round((priceForMedia(after) - priceForMedia(before)) * 10) / 10 };
+}
+function trend(p) {
+  const d = lastMove(p); if (!d || (d.media === 0 && d.price === 0)) return "";
+  const up = d.media > 0;
+  return `<span class="trend ${up ? "up" : "down"}">${up ? "▲" : "▼"} ${Math.abs(d.media)} media · ${up ? "+" : "−"}${money(Math.abs(d.price))}</span>`;
+}
+function ovr(p) { const m = mediaOf(p); return `<span class="ovr ${m >= 70 ? "gold" : m >= 55 ? "silver" : m < 45 ? "low" : ""}" title="Media">${m}</span>`; }
+function lineupFor(md, uid) { return md?.lineups?.[uid] || null; }
+function managerMdPts(md, uid) {
+  const lu = lineupFor(md, uid); if (!lu || !hasResult(md)) return null;
+  let t = 0;
+  for (const pid of lu.players || []) { const p = S.players[pid] || lu.snap?.[pid]; if (!p) continue; const v = playerPts({ ...p, id: pid }, md); t += pid === lu.captain ? v * 2 : v; }
+  return t;
+}
+function managerTotal(uid) { return scoredMds().reduce((a, md) => a + (managerMdPts(md, uid) || 0), 0); }
+
+// ---------- Datos ----------
+const isTyping = () => { const a = document.activeElement; return a && $("#view").contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName) || (a && $("#modalRoot").contains(a) && /INPUT|TEXTAREA|SELECT/.test(a.tagName)); };
+let raf = 0;
+function schedule() {
+  if (isTyping()) { S.pending = true; return; }
+  cancelAnimationFrame(raf); raf = requestAnimationFrame(render);
+}
+document.addEventListener("focusout", () => setTimeout(() => { if (S.pending && !isTyping()) { S.pending = false; schedule(); } }, 250));
+
+async function resolveProfiles() {
+  if (!S.user?.profiles) return;
+  const ids = Object.keys(S.teams).filter((id) => !S.profiles[id]);
+  if (!ids.length) return;
+  try { const ps = await S.user.profiles(ids); Object.assign(S.profiles, ps); schedule(); } catch {}
+}
+const managerName = (uid) => S.signups[uid]?.name || S.players[uid]?.name || S.profiles[uid]?.name || (uid === S.uid ? "Tú" : "Mánager");
+const started = () => S.cfg?.started === true;
+
+async function boot() {
+  const timer = setTimeout(() => { if (!allLoaded()) { S.offline = true; schedule(); } }, 10000);
+  let db = null, user = null;
+  try { [db, user] = await Promise.all([window.claude?.use?.("db"), window.claude?.use?.("user")]); } catch {}
+  S.db = db; S.user = user;
+  if (!db) { clearTimeout(timer); S.noDb = true; render(); return; }
+  try { S.uid = (await user?.id?.()) || null; } catch {}
+  try { S.owner = !!(await user?.isOwner?.()); } catch {}
+  try { S.canWrite = await user?.can?.("data.write"); } catch { S.canWrite = null; }
+  $("#tabAdmin").hidden = !S.owner;
+  try { window.claude.use("assets").then((a) => { S.assets = a; }); } catch {}
+  if (S.owner) try { window.claude.use("sample").then(async (fn) => { if (!fn) return; const lim = await fn.limits().catch(() => null); if (lim?.images) { S.sample = fn; S.sampleLim = lim.images; schedule(); } }); } catch {}
+  const done = (k) => { S.loaded[k] = true; if (allLoaded()) { clearTimeout(timer); S.offline = false; } schedule(); };
+  const fail = (k) => () => { S.loaded[k] = true; S.offline = true; schedule(); };
+  db.doc("league/config").onSnapshot((d) => { S.cfg = d.exists ? d.data() : null; if (!d.metadata.fromCache) done("cfg"); else schedule(); }, fail("cfg"));
+  db.collection("players").onSnapshot((q) => { S.players = {}; q.docs.forEach((d) => { S.players[d.id] = { ...d.data(), id: d.id }; }); if (!q.metadata.fromCache) done("players"); else schedule(); }, fail("players"));
+  db.collection("matchdays").onSnapshot((q) => { S.mds = {}; q.docs.forEach((d) => { S.mds[d.id] = { ...d.data(), id: d.id }; }); if (!q.metadata.fromCache) done("mds"); else schedule(); }, fail("mds"));
+  db.collection("signups").onSnapshot((q) => { S.signups = {}; q.docs.forEach((d) => { S.signups[d.id] = { ...d.data(), id: d.id }; }); if (!q.metadata.fromCache) done("signups"); else schedule(); }, fail("signups"));
+  db.collection("teams").onSnapshot((q) => { S.teams = {}; q.docs.forEach((d) => { S.teams[d.id] = { ...d.data(), id: d.id }; }); resolveProfiles(); if (!q.metadata.fromCache) done("teams"); else schedule(); }, fail("teams"));
+}
+const allLoaded = () => Object.values(S.loaded).every(Boolean);
+
+// ---------- Componentes ----------
+function initials(name) { return String(name || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase(); }
+let kitSeq = 0;
+function kit(p, size) {
+  const id = "k" + (++kitSeq); const num = p?.bot ? "B" : String(p?.dorsal || "").slice(0, 2);
+  const st = size ? ` style="--size:${size}px"` : "";
+  const shirt = "M33 9 L42 5 Q50 13 58 5 L67 9 L93 23 L84 42 L74 37 L74 95 L26 95 L26 37 L16 42 L7 23 Z";
+  return `<span class="kit"${st} aria-hidden="true"><svg viewBox="0 0 100 100"><defs><clipPath id="${id}"><path d="${shirt}"/></clipPath></defs>
+    <path d="${shirt}" fill="${p?.bot ? "var(--kit-bot)" : "var(--kit-white)"}"/>
+    <g clip-path="url(#${id})"><path d="M14 0 L38 0 L96 100 L72 100 Z" fill="${p?.bot ? "var(--kit-bot-2)" : "var(--kit-red)"}"/></g>
+    <path d="M42 5 Q50 13 58 5" fill="none" stroke="${p?.bot ? "var(--kit-bot-2)" : "var(--kit-red)"}" stroke-width="3"/>
+    <path d="${shirt}" fill="none" stroke="var(--kit-edge)" stroke-width="2.5" stroke-linejoin="round"/>
+    ${num ? `<text x="50" y="70" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif" font-weight="800" font-size="${num.length > 1 ? 36 : 40}" fill="var(--kit-ink)" stroke="var(--kit-white)" stroke-width="4" paint-order="stroke">${esc(num)}</text>` : ""}
+  </svg></span>`;
+}
+function avatar(p, size) { return kit(p, size); }
+function photoAv(p, size) {
+  const st = size ? ` style="--size:${size}px"` : "";
+  return p?.photo ? `<span class="av"${st}><img src="/_blob/${esc(p.photo)}" alt=""></span>` : "";
+}
+const armband = (p) => p?.isCaptain ? `<span class="armband" title="Capitán del equipo">C</span>` : "";
+function who(p, extra = "") {
+  return `<div class="who">${S.players[p.id] ? ovr(p) : ""}${avatar(p)}<div style="min-width:0"><b>${p.dorsal ? `<span class="dor">${esc(p.dorsal)}</span> ` : ""}${esc(p.name)} ${armband(p)}</b><small><span class="pos ${esc(p.pos)}">${esc(p.pos)}</span> ${extra}</small></div></div>`;
+}
+function ptsEl(v) { return `<span class="pts num ${v < 0 ? "neg" : ""}">${v}</span>`; }
+function resultChip(md) {
+  if (!hasResult(md)) return `<span class="chip">Sin resultado</span>`;
+  const gf = +md.gf, ga = +md.ga;
+  return gf > ga ? `<span class="chip win">Victoria</span>` : gf < ga ? `<span class="chip loss">Derrota</span>` : `<span class="chip">Empate</span>`;
+}
+function statusNote() {
+  if (S.noDb) return `<div class="note warn">Esta vista no puede conectar con la base de datos de la liga. Abre el enlace de la liga con tu cuenta de Claude iniciada.</div>`;
+  if (S.offline) return `<div class="note warn">No se pueden cargar los datos de la liga ahora mismo. Lo que ves puede estar desactualizado; se actualizará solo cuando vuelva la conexión.</div>`;
+  return "";
+}
+
+// ---------- Vistas ----------
+function render() {
+  const c = cfg();
+  $("#leagueName").innerHTML = esc(c.name).replace(/(\S+)$/, "<span>$1</span>");
+  $("#leagueSub").textContent = !allLoaded() ? "Cargando…" : started() ? `${c.club} · ${(FORMATOS[c.formato] || FORMATOS.f7).label.split(" (")[0]} · ${Object.keys(S.teams).length} mánager${Object.keys(S.teams).length === 1 ? "" : "s"}` : `${c.club} · ${Object.keys(S.signups).length} apuntados`;
+  const r = route();
+  const eb = $("#endLeague"); eb.hidden = !(S.owner && started()); eb.textContent = S.confirmEnd ? "¿Seguro? Pulsa otra vez: se borran equipos, jornadas y mercado" : "Finalizar liga"; eb.classList.toggle("armed", !!S.confirmEnd);
+  document.querySelectorAll("#tabs a").forEach((a) => { if (a.getAttribute("href") === "#" + r) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+  let html = statusNote();
+  if (!S.noDb && allLoaded() && !started() && r !== "reglas") html += viewLobby();
+  else if (!allLoaded() && !S.noDb && !S.offline) html += `<div class="empty"><h3>Cargando la liga</h3><p class="muted">Clasificación, equipos y jornadas.</p></div>`;
+  else html += ({ inicio: viewHome, equipo: viewTeam, mercado: viewMarket, jornadas: viewMatchdays, reglas: viewRules, admin: viewAdmin }[r])();
+  $("#view").innerHTML = html;
+  renderModal();
+}
+
+const bySquad = (a, b) => POS_ORDER.indexOf(a.pos) - POS_ORDER.indexOf(b.pos) || (+a.dorsal || 99) - (+b.dorsal || 99) || String(a.name).localeCompare(String(b.name));
+function joinForm() {
+  if (!S.uid) return `<div class="note warn">Abre el enlace con tu cuenta de Claude iniciada para poder apuntarte.</div>`;
+  const me = S.signups[S.uid];
+  if (me && !S.editJoin) return `<div class="panel row spread"><div class="who">${avatar(me, 56)}<div><div class="eyebrow">Ya estás apuntado</div><b>${esc(me.name)} ${armband(me)}</b><small><span class="pos ${esc(me.pos)}">${esc(me.pos)}</span> · dorsal ${esc(me.dorsal)}</small></div></div>${started() && S.players[S.uid] ? `<a class="btn primary" href="#equipo">Hacer mi equipo</a>` : `<button class="btn" data-act="join-edit">Cambiar mis datos</button>`}</div>`;
+  const j = S.join ||= { name: me?.name || "", dorsal: me?.dorsal || "", pos: me?.pos || "" };
+  return `<div class="panel section"><div class="fields">
+      <div class="field"><label for="jn-name">Tu nombre</label><input id="jn-name" maxlength="30" autocomplete="given-name" data-bind="join.name" placeholder="Como te llaman en el equipo" value="${esc(j.name)}"></div>
+      <div class="field"><label for="jn-dorsal">Dorsal</label><input id="jn-dorsal" type="number" min="1" max="99" inputmode="numeric" data-bind="join.dorsal" placeholder="10" value="${esc(j.dorsal)}"></div>
+      <div class="field"><label for="jn-pos">Posición</label><select id="jn-pos" data-bind="join.pos"><option value="">Elige…</option>${POS_ORDER.map((k) => `<option value="${k}" ${j.pos === k ? "selected" : ""}>${POS[k].n}</option>`).join("")}</select></div>
+    </div><div class="row">${me ? `<button class="btn" data-act="join-cancel">Cancelar</button>` : ""}<button class="btn primary" data-act="join">${me ? "Guardar mis datos" : "Apuntarme"}</button></div></div>`;
+}
+function signupList() {
+  const su = Object.values(S.signups).sort(bySquad);
+  if (!su.length) return `<div class="empty"><h3>Todavía no se ha apuntado nadie</h3><p class="muted">Pásale el enlace al equipo. Cada uno pone su nombre, su dorsal y su posición, y aparecerá aquí.</p></div>`;
+  return `<div class="tablebox"><table><thead><tr><th>Jugador</th><th class="hide-sm">Posición</th>${S.owner ? "<th></th>" : ""}</tr></thead><tbody>${su.map((x) => `<tr class="${x.id === S.uid ? "me" : ""}"><td>${who({ ...x, photo: null }, x.id === S.uid ? "· tú" : "")}</td><td class="hide-sm">${esc(POS[x.pos]?.n || x.pos)}</td>${S.owner ? `<td class="r"><div class="row" style="justify-content:flex-end;flex-wrap:nowrap;gap:6px"><button class="btn small" data-act="cap-toggle" data-col="signups" data-id="${esc(x.id)}" aria-pressed="${!!x.isCaptain}">${x.isCaptain ? "Quitar capitán" : "Capitán"}</button><button class="btn small danger" data-act="signup-remove" data-id="${esc(x.id)}">${S.confirmDel === x.id ? "¿Seguro?" : "Quitar"}</button></div></td>` : ""}</tr>`).join("")}</tbody></table></div>`;
+}
+function viewLobby() {
+  const c = cfg(); const n = Object.keys(S.signups).length;
+  const count = POS_ORDER.map((k) => `${Object.values(S.signups).filter((x) => x.pos === k).length} ${k}`).join(" · ");
+  let html = `<section class="section"><div><div class="eyebrow">${esc(c.club)}</div><h2>Apúntate a la liga</h2></div>
+    <p class="muted" style="margin:0;max-width:62ch">Primero nos apuntamos todos con nombre, dorsal y posición. Cuando estemos, el administrador crea la liga y cada mánager empieza con una plantilla de bots. A la semana se abre el mercado y cada uno tiene <b>${money(c.budget)}</b> para fichar a sus compañeros. El mercado cambia todos los días a las 12:00. Cada vez que alguien lo hace bien en un partido suma puntos y sube su media y su valor.</p>
+    ${joinForm()}</section>
+    <section class="section"><div class="row spread"><h2>Apuntados</h2><span class="eyebrow">${n} · ${count}</span></div>${signupList()}</section>`;
+  if (S.owner) {
+    const a = S.adminCfg ||= { ...c, startMedia: "" };
+    const sp = defaultPriceFor(+a.budget || 30, a.formato); const sm = +a.startMedia || MEDIA_INICIAL;
+    const spm = Math.round(sp * Math.pow(PRICE_STEP, sm - 50) * 10) / 10;
+    html += `<section class="section"><h2>Crear la liga</h2><div class="panel section"><div class="fields">
+      <div class="field"><label for="ac-name">Nombre de la liga</label><input id="ac-name" data-bind="adminCfg.name" value="${esc(a.name)}"></div>
+      <div class="field"><label for="ac-club">Equipo</label><input id="ac-club" data-bind="adminCfg.club" value="${esc(a.club)}"></div>
+      <div class="field"><label for="ac-formato">Formato</label><select id="ac-formato" data-bind="adminCfg.formato">${Object.entries(FORMATOS).map(([k, f]) => `<option value="${k}" ${a.formato === k ? "selected" : ""}>${f.label}</option>`).join("")}</select></div>
+      <div class="field"><label for="ac-budget">Dinero por mánager (M)</label><input id="ac-budget" type="number" min="5" data-bind="adminCfg.budget" value="${esc(a.budget)}"></div>
+      <div class="field"><label for="ac-start">Media inicial de todos</label><input id="ac-start" type="number" min="1" max="99" data-bind="adminCfg.startMedia" placeholder="${MEDIA_INICIAL}" value="${esc(a.startMedia)}"></div></div>
+      <p class="muted" style="margin:0;font-size:13px">Al crear la liga cada mánager recibe una plantilla de bots y el mercado abre 7 días después (puedes abrirlo antes desde Admin). Todos empiezan con media ${sm}, que vale ${money(spm)}. Cada partido la media sube o baja según los puntos y con ella el precio. Si alguien se apunta tarde, lo podrás añadir desde Admin.</p>
+      <div class="row"><button class="btn primary" data-act="league-start" ${n ? "" : "disabled"}>Crear la liga con ${n} jugador${n === 1 ? "" : "es"}</button></div></div></section>`;
+  } else html += `<div class="note">Cuando estéis todos, el administrador creará la liga y aquí se abrirá el mercado.</div>`;
+  return html;
+}
+
+function standings() {
+  return Object.values(S.teams).map((t) => {
+    const last = scoredMds().filter((md) => lineupFor(md, t.id)).slice(-1)[0];
+    return { t, total: managerTotal(t.id), last: last ? managerMdPts(last, t.id) : null };
+  }).sort((a, b) => b.total - a.total || (a.t.name || "").localeCompare(b.t.name || ""));
+}
+
+function viewHome() {
+  const rows = standings();
+  const scored = scoredMds(); const lastMd = scored[scored.length - 1];
+  const next = mdList().find((m) => !hasResult(m));
+  const mine = S.uid && S.teams[S.uid];
+  let html = "";
+  if (S.uid && !S.signups[S.uid]) html += `<section class="section"><h3>¿Juegas en el ${esc(cfg().club)}? Apúntate</h3>${joinForm()}</section>`;
+  else if (S.uid && !S.players[S.uid]) html += `<div class="note">Ya estás apuntado. El administrador te añadirá al mercado en breve.</div>`;
+  if (!mine && S.uid) html += `<div class="note">Todavía no tienes equipo. <a href="#equipo">Crea tu equipo fantasy</a> y elige a tus compañeros antes de que se cierren las alineaciones.</div>`;
+  html += `<div class="grid2"><section class="section"><div class="row spread"><h2>Clasificación</h2><span class="eyebrow">${scored.length} jornada${scored.length === 1 ? "" : "s"} jugada${scored.length === 1 ? "" : "s"}</span></div>`;
+  if (!rows.length) html += `<div class="empty"><h3>Sin mánagers todavía</h3><p class="muted">Cuando cada compañero cree su equipo en "Mi equipo" aparecerá aquí, ordenado por puntos.</p></div>`;
+  else html += `<div class="tablebox"><table><thead><tr><th>#</th><th>Equipo</th><th class="r">Últ.</th><th class="r">Total</th></tr></thead><tbody>${rows.map((r, i) => `<tr class="${r.t.id === S.uid ? "me" : ""} clickable" data-act="show-team" data-id="${esc(r.t.id)}"><td class="rank num">${i + 1}</td><td><b>${esc(r.t.name || "Equipo sin nombre")}</b><br><small class="muted">${esc(managerName(r.t.id))}</small></td><td class="r num">${r.last ?? "–"}</td><td class="r"><span class="big num">${r.total}</span></td></tr>`).join("")}</tbody></table></div>`;
+  html += `</section><section class="section">`;
+  if (next) html += `<div class="panel section"><div class="eyebrow">Próxima jornada</div><div class="match"><div><h3>J${esc(next.number)} · vs ${esc(next.rival || "Rival por decidir")}</h3><span class="muted">${esc(fmtDate(next.date))}</span></div>${next.lineups ? `<span class="chip lock">Alineaciones cerradas</span>` : `<span class="chip">Alineaciones abiertas</span>`}</div></div>`;
+  if (lastMd) {
+    const top = Object.values(S.players).map((p) => ({ p, v: playerPts(p, lastMd) })).filter((x) => lastMd.stats?.[x.p.id]?.played).sort((a, b) => b.v - a.v).slice(0, 5);
+    html += `<div class="panel section"><div class="eyebrow">Última jornada</div><div class="match"><div><h3>J${esc(lastMd.number)} · vs ${esc(lastMd.rival || "")}</h3>${resultChip(lastMd)}</div><span class="score num">${esc(lastMd.gf)}–${esc(lastMd.ga)}</span></div>
+      <h3 style="margin-top:6px">Los mejores</h3><div class="list">${top.map((x) => `<div class="item clickable" data-act="show-player" data-id="${esc(x.p.id)}">${who(x.p, lastMd.stats[x.p.id]?.mvp ? "· MVP" : "")}${ptsEl(x.v)}</div>`).join("") || `<p class="muted">Sin estadísticas.</p>`}</div></div>`;
+  } else if (!next) html += `<div class="empty"><h3>Sin jornadas</h3><p class="muted">El administrador crea cada jornada con el rival y la fecha. Después del partido mete goles, asistencias y tarjetas, y los puntos aparecen aquí.</p></div>`;
+  html += `</section></div>`;
+  return html;
+}
+
+function fmtDate(d) { if (!d) return "Fecha por decidir"; try { return new Date(d + "T12:00:00").toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" }); } catch { return d; } }
+
+// ---------- Bots y mercado diario ----------
+const isBot = (id) => typeof id === "string" && id.startsWith("bot-");
+function botObj(id) { const [, pos, n] = id.split("-"); return { id, bot: true, name: "Bot", pos: POS[pos] ? pos : "MED", dorsal: "", n: +n || 1 }; }
+const getP = (id) => S.players[id] || (isBot(id) ? botObj(id) : null);
+function fullBots() { const out = []; for (const pos of POS_ORDER) for (let i = 1; i <= slots()[pos]; i++) out.push(`bot-${pos}-${i}`); return out; }
+function normalizeSquad(ids) {
+  const sl = slots(); const out = [];
+  for (const pos of POS_ORDER) {
+    const real = ids.filter((id) => !isBot(id) && S.players[id]?.pos === pos);
+    const bots = ids.filter((id) => isBot(id) && botObj(id).pos === pos);
+    const need = Math.max(0, sl[pos] - real.length);
+    const keep = bots.slice(0, need); let n = 1;
+    while (keep.length < need) { const bid = `bot-${pos}-${n++}`; if (!keep.includes(bid)) keep.push(bid); }
+    out.push(...real, ...keep);
+  }
+  return out;
+}
+function madridNow(d = new Date()) { const o = {}; for (const x of new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(d)) o[x.type] = x.value; return o; }
+function marketDay() { const now = new Date(); const p = madridNow(now); const q = +p.hour < 12 ? madridNow(new Date(now.getTime() - 864e5)) : p; return `${q.year}-${q.month}-${q.day}`; }
+function minsToChange() { const p = madridNow(); const h = +p.hour, m = +p.minute; return h < 12 ? (12 - h) * 60 - m : (36 - h) * 60 - m; }
+function fmtMins(n) { const h = Math.floor(n / 60), m = n % 60; return h ? `${h} h ${m} min` : `${m} min`; }
+function hashStr(str) { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+function rng(seed) { return () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function marketPool() { return Object.values(S.players).filter((p) => p.available !== false).sort((a, b) => (a.id < b.id ? -1 : 1)); }
+function marketSize() { return Math.max(1, Math.round(+S.cfg?.marketSize || 8)); }
+function todayMarket() {
+  const a = [...marketPool()]; const r = rng(hashStr(marketDay() + "|" + (S.cfg?.marketSalt || "")));
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a.slice(0, marketSize()).sort(bySquad);
+}
+function marketOpen() { const t = S.cfg?.marketOpensAt; return !t || Date.now() >= Date.parse(t); }
+function fmtDateTime(iso) { try { return new Date(iso).toLocaleString("es-ES", { timeZone: "Europe/Madrid", weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }); } catch { return iso; } }
+const inMarket = (pid) => todayMarket().some((p) => p.id === pid);
+setInterval(() => {
+  const day = marketDay(); const open = marketOpen();
+  if (day !== S.lastDay || open !== S.wasOpen) { const first = S.lastDay === undefined; S.lastDay = day; S.wasOpen = open; if (!first) { S.draft = S.draft?.dirty ? S.draft : null; schedule(); } }
+  document.querySelectorAll("[data-countdown]").forEach((el) => { el.textContent = fmtMins(minsToChange()); });
+}, 20000);
+
+function myTeam() { return S.uid ? S.teams[S.uid] : null; }
+function teamMoves(t) { return t?.moves || (t?.players || []).filter((pid) => !isBot(pid)).map((pid) => ({ t: "buy", pid, price: priceOf(S.players[pid]) })); }
+function cashOf(moves) { return Math.round((cfg().budget - moves.reduce((a, m) => a + (m.t === "buy" ? +m.price : -m.price), 0)) * 10) / 10; }
+function teamValue(ids) { return ids.reduce((a, id) => a + priceOf(S.players[id]), 0); }
+function ensureDraft() {
+  const t = myTeam();
+  if (!S.draft || S.draft.base !== (t?.updatedAt || "new")) {
+    const moves = teamMoves(t);
+    S.draft = { base: t?.updatedAt || "new", name: t?.name || "", players: normalizeSquad([...(t?.players || [])].filter((id) => getP(id))), captain: t?.captain || null, moves: [...moves], baseLen: moves.length, dirty: false };
+  }
+  return S.draft;
+}
+function draftBuy(d, pid, replaceBot) {
+  const pos = S.players[pid]?.pos; if (!pos || d.players.includes(pid)) return false;
+  const bot = replaceBot && d.players.includes(replaceBot) ? replaceBot : d.players.find((x) => isBot(x) && botObj(x).pos === pos);
+  if (!bot) return false;
+  const i = d.moves.findIndex((m, k) => k >= d.baseLen && m.pid === pid && m.t === "sell");
+  if (i >= 0) d.moves.splice(i, 1); else d.moves.push({ t: "buy", pid, price: priceOf(S.players[pid]) });
+  d.players = d.players.filter((x) => x !== bot); d.players.push(pid);
+  return true;
+}
+function draftSell(d, pid) {
+  const i = d.moves.findIndex((m, k) => k >= d.baseLen && m.pid === pid && m.t === "buy");
+  if (i >= 0) d.moves.splice(i, 1); else d.moves.push({ t: "sell", pid, price: priceOf(S.players[pid]) });
+  d.players = normalizeSquad(d.players.filter((x) => x !== pid));
+}
+
+function viewTeam() {
+  if (!S.uid) return `<div class="empty"><h3>Inicia sesión para jugar</h3><p class="muted">Necesitas abrir la liga con tu cuenta de Claude para tener tu propio equipo.</p></div>`;
+  const d = ensureDraft(); const sl = slots(); const c = cfg();
+  const cash = cashOf(d.moves); const value = teamValue(d.players.filter((x) => !isBot(x)));
+  const openMd = mdList().find((m) => !hasResult(m) && !m.lineups);
+  const lockedMd = mdList().find((m) => !hasResult(m) && m.lineups);
+  const readonly = S.canWrite === false;
+  let html = `<section class="section"><div class="row spread"><div><div class="eyebrow">${myTeam() ? "Tu equipo" : "Crea tu equipo"}</div><h2>${esc(d.name || "Mi equipo")}</h2></div>
+    <div class="row">${myTeam() ? `<span class="pts num">${managerTotal(S.uid)}</span><span class="muted">puntos</span>` : ""}</div></div>`;
+  if (readonly) html += `<div class="note warn">Con tu nivel de acceso puedes ver la liga pero no guardar un equipo. Pide al administrador que te invite con permiso para editar.</div>`;
+  const nb = d.players.filter(isBot).length;
+  if (!marketOpen()) html += `<div class="note">Esta semana juegas con tu plantilla de bots. El mercado abre el <b>${esc(fmtDateTime(S.cfg.marketOpensAt))}</b> y ahí podrás fichar con tus ${money(c.budget)}.</div>`;
+  else if (nb) html += `<div class="note">Tienes ${nb} bot${nb === 1 ? "" : "s"} en el equipo, que no puntúan. Toca un bot para fichar a alguien del <a href="#mercado">mercado de hoy</a>.</div>`;
+  if (lockedMd) html += `<div class="note">Las alineaciones de la J${esc(lockedMd.number)} ya están cerradas. Los cambios que guardes cuentan para la siguiente jornada.</div>`;
+  else if (openMd) html += `<div class="note">Alineaciones abiertas para la J${esc(openMd.number)} vs ${esc(openMd.rival || "rival")}. Guarda antes de que el administrador las cierre.</div>`;
+  html += `<div class="field" style="max-width:360px"><label for="team-name">Nombre de tu equipo</label><input id="team-name" maxlength="40" data-bind="draft.name" placeholder="Los Galácticos del Barrio" value="${esc(d.name)}"></div>
+    <div class="budget ${cash < 0 ? "over" : ""}"><div><span class="eyebrow">Caja</span><b class="num">${money(cash)}</b></div><div><span class="eyebrow">Valor del equipo</span><b class="num">${money(value)}</b></div><div><span class="eyebrow">Patrimonio</span><b class="num">${money(cash + value)}</b></div></div>
+    <div class="pitch" role="group" aria-label="Alineación">`;
+  for (const pos of [...POS_ORDER].reverse()) {
+    const ids = d.players.filter((id) => getP(id)?.pos === pos).sort((a, b) => isBot(a) - isBot(b));
+    html += `<div class="line">`;
+    for (let i = 0; i < sl[pos]; i++) {
+      const p = getP(ids[i]);
+      if (p?.bot) html += `<button class="slot botslot" data-act="slot-pick" data-pos="${pos}" data-bot="${esc(p.id)}" aria-label="Bot de ${POS[pos].n.toLowerCase()}: fichar a alguien"><span class="avwrap">${avatar(p)}</span><span class="tag">Bot · ${pos}</span><span class="price num">Fichar</span></button>`;
+      else if (p) html += `<button class="slot" data-act="slot-player" data-id="${esc(p.id)}" aria-label="${esc(p.name)}, opciones"><span class="avwrap">${ovr(p)}${avatar(p)}${d.captain === p.id ? `<span class="cap" title="Tu capitán: puntúa doble">×2</span>` : ""}</span><span class="tag">${p.isCaptain ? "Ⓒ " : ""}${esc(p.name)}</span><span class="price num">${money(priceOf(p))}</span></button>`;
+      else html += `<button class="slot open" data-act="slot-pick" data-pos="${pos}" aria-label="Elegir ${POS[pos].n.toLowerCase()}"><span class="avwrap"><span class="av">+</span></span><span class="tag">${pos}</span></button>`;
+    }
+    html += `</div>`;
+  }
+  const problems = teamProblems(d);
+  html += `</div><div class="row spread"><span class="muted" id="team-msg">${teamMsg(d)}</span>
+    <div class="row">${d.dirty ? `<button class="btn" data-act="draft-reset">Deshacer cambios</button>` : ""}<button class="btn primary" id="team-save" data-act="draft-save" ${problems.length || readonly || S.saving ? "disabled" : ""}>${myTeam() ? "Guardar cambios" : "Crear mi equipo"}</button></div></div>
+    <p class="muted" style="margin:0;font-size:13px">Empiezas con ${money(c.budget)} y una plantilla de bots que dan 0 puntos. Cada día a las 12:00 cambian los jugadores que se pueden fichar. Fichas al precio de ese momento y, si vendes, cobras lo que valga entonces (el hueco lo vuelve a ocupar un bot). El capitán puntúa doble.</p></section>`;
+  // historial
+  const hist = scoredMds().filter((md) => lineupFor(md, S.uid));
+  if (hist.length) html += `<section class="section"><h3>Tus jornadas</h3><div class="tablebox"><table><thead><tr><th>Jornada</th><th>Capitán</th><th class="r">Puntos</th></tr></thead><tbody>${hist.reverse().map((md) => `<tr class="clickable" data-act="show-md-team" data-md="${esc(md.id)}" data-id="${esc(S.uid)}"><td>J${esc(md.number)} vs ${esc(md.rival || "")}</td><td>${esc(S.players[lineupFor(md, S.uid).captain]?.name || "–")}</td><td class="r">${ptsEl(managerMdPts(md, S.uid))}</td></tr>`).join("")}</tbody></table></div></section>`;
+  return html;
+}
+
+function teamProblems(d) {
+  const problems = []; const left = cashOf(d.moves);
+  if (!d.name.trim()) problems.push("ponle nombre al equipo");
+  if (left < 0) problems.push(`te faltan ${money(-left)} en caja`);
+  if (d.players.some((x) => !isBot(x)) && !d.captain) problems.push("elige capitán (toca a un jugador)");
+  return problems;
+}
+function teamMsg(d) { const pr = teamProblems(d); return pr.length ? "Para guardar: " + pr.join(", ") + "." : d.dirty ? "Tienes cambios sin guardar." : myTeam() ? "Equipo guardado." : "Ponle nombre y guarda para entrar en la clasificación."; }
+function ownership(pid) { const ts = Object.values(S.teams); if (!ts.length) return 0; return Math.round(100 * ts.filter((t) => (t.players || []).includes(pid)).length / ts.length); }
+
+function marketPanel() {
+  const open = marketOpen(); const list = todayMarket(); const t = myTeam();
+  const d = S.uid ? ensureDraft() : null; const cash = d ? cashOf(d.moves) : 0;
+  let html = `<section class="section"><div class="row spread"><div><div class="eyebrow">Cambia en <span data-countdown>${fmtMins(minsToChange())}</span> · todos los días a las 12:00</div><h2>Mercado de hoy</h2></div>${d ? `<span class="chip">En caja ${money(cash)}</span>` : ""}</div>`;
+  if (!open) html += `<div class="note">El mercado abre el <b>${esc(fmtDateTime(S.cfg.marketOpensAt))}</b>. Mientras tanto cada uno juega con su plantilla de bots. Ya puedes ver quién saldría hoy.</div>`;
+  else if (!t && S.uid) html += `<div class="note">Para fichar, primero <a href="#equipo">ponle nombre a tu equipo</a> y guárdalo.</div>`;
+  if (!list.length) return html + `<div class="empty"><h3>Hoy no hay nadie en el mercado</h3><p class="muted">Salen los jugadores que pueden jugar. El administrador marca quién no está disponible.</p></div></section>`;
+  html += `<div class="tablebox"><table><tbody>${list.map((p) => {
+    const owned = d?.players.includes(p.id); const pr = priceOf(p);
+    const can = open && t && !owned && pr <= cash;
+    return `<tr><td class="clickable" data-act="show-player" data-id="${esc(p.id)}">${who(p, `· ${seasonPts(p)} pts ${trend(p)}`)}</td><td class="r">${owned ? `<span class="chip win">Es tuyo</span>` : `<button class="btn small ${can ? "primary" : ""}" data-act="mk-buy" data-id="${esc(p.id)}" ${can ? "" : "disabled"}>Fichar ${money(pr)}</button>`}</td></tr>`;
+  }).join("")}</tbody></table></div><p class="muted" style="margin:0;font-size:13px">Cada día salen ${Math.min(marketSize(), marketPool().length)} de los ${marketPool().length} jugadores disponibles, al azar. Todos los mánagers ven el mismo mercado y un jugador puede estar en varios equipos.</p></section>`;
+  return html;
+}
+function viewMarket() {
+  let ps = Object.values(S.players);
+  if (!ps.length) return `<div class="empty"><h3>Mercado vacío</h3><p class="muted">Aquí estarán todos los jugadores del equipo con su precio, sus puntos y cuántos mánagers los tienen.</p></div>`;
+  if (S.marketPos !== "ALL") ps = ps.filter((p) => p.pos === S.marketPos);
+  const rows = ps.map((p) => ({ p, pts: seasonPts(p), own: ownership(p.id), pj: scoredMds().filter((md) => md.stats?.[p.id]?.played).length }));
+  const key = S.marketSort;
+  rows.sort((a, b) => key === "price" ? priceOf(b.p) - priceOf(a.p) : key === "media" ? mediaOf(b.p) - mediaOf(a.p) : key === "own" ? b.own - a.own : key === "name" ? a.p.name.localeCompare(b.p.name) : b.pts - a.pts);
+  const mine = new Set(myTeam()?.players || []);
+  return marketPanel() + `<section class="section"><div class="row spread"><h2>Toda la plantilla</h2>
+    <div class="row"><div class="seg" role="group" aria-label="Posición">${["ALL", ...POS_ORDER].map((k) => `<button data-act="market-pos" data-v="${k}" aria-pressed="${S.marketPos === k}">${k === "ALL" ? "Todos" : k}</button>`).join("")}</div>
+    <div class="field"><select id="market-sort" aria-label="Ordenar" data-act-change="market-sort"><option value="pts" ${key === "pts" ? "selected" : ""}>Más puntos</option><option value="media" ${key === "media" ? "selected" : ""}>Mejor media</option><option value="price" ${key === "price" ? "selected" : ""}>Más valor</option><option value="own" ${key === "own" ? "selected" : ""}>Más fichados</option><option value="name" ${key === "name" ? "selected" : ""}>Nombre</option></select></div></div></div>
+    <div class="tablebox"><table><thead><tr><th>Jugador</th><th class="r hide-sm">PJ</th><th class="r hide-sm">Pts/PJ</th><th class="r hide-sm">Fichado</th><th class="r">Valor</th><th class="r">Puntos</th></tr></thead><tbody>
+    ${rows.map((r) => `<tr class="clickable" data-act="show-player" data-id="${esc(r.p.id)}"><td>${who(r.p, r.p.id === S.uid ? "· eres tú" : mine.has(r.p.id) ? "· en tu equipo" : "")}</td><td class="r num hide-sm">${r.pj}</td><td class="r num hide-sm">${r.pj ? (r.pts / r.pj).toFixed(1).replace(".", ",") : "–"}</td><td class="r num hide-sm">${r.own}%</td><td class="r num">${money(priceOf(r.p))}<br>${trend(r.p)}</td><td class="r">${ptsEl(r.pts)}</td></tr>`).join("")}
+    </tbody></table></div></section>`;
+}
+
+function viewMatchdays() {
+  const mds = mdList().reverse();
+  if (!mds.length) return `<div class="empty"><h3>Sin jornadas</h3><p class="muted">Cada partido del equipo es una jornada. Cuando el administrador la cree, verás aquí el resultado y lo que puntuó cada uno.</p></div>`;
+  return `<section class="section"><h2>Jornadas</h2>${mds.map((md) => {
+    const open = S.openMd === md.id;
+    let body = "";
+    if (open && hasResult(md)) {
+      const ps = Object.values(S.players).filter((p) => md.stats?.[p.id]?.played).map((p) => ({ p, v: playerPts(p, md), s: md.stats[p.id] })).sort((a, b) => b.v - a.v);
+      const mgr = Object.keys(md.lineups || {}).map((uid) => ({ uid, v: managerMdPts(md, uid) })).sort((a, b) => b.v - a.v);
+      body = `<div class="grid2" style="margin-top:12px"><div class="section"><h3>Jugadores</h3><div class="list">${ps.map((x) => `<div class="item clickable" data-act="show-player" data-id="${esc(x.p.id)}">${who(x.p, statLine(x.s))}${ptsEl(x.v)}</div>`).join("") || `<p class="muted">Sin estadísticas.</p>`}</div></div>
+        <div class="section"><h3>Mánagers</h3><div class="list">${mgr.map((m) => `<div class="item clickable" data-act="show-md-team" data-md="${esc(md.id)}" data-id="${esc(m.uid)}"><div><b>${esc(S.teams[m.uid]?.name || "Equipo")}</b><br><small class="muted">${esc(managerName(m.uid))}</small></div>${ptsEl(m.v)}</div>`).join("") || `<p class="muted">Nadie tenía alineación cerrada en esta jornada.</p>`}</div></div></div>`;
+    } else if (open) body = `<p class="muted">El partido todavía no tiene resultado.</p>`;
+    return `<div class="panel"><div class="match clickable" data-act="toggle-md" data-id="${esc(md.id)}" role="button" tabindex="0" aria-expanded="${open}"><div><div class="eyebrow">Jornada ${esc(md.number)} · ${esc(fmtDate(md.date))}</div><h3>vs ${esc(md.rival || "Rival por decidir")}</h3><div class="row" style="margin-top:4px">${resultChip(md)}${md.lineups ? `<span class="chip lock">Alineaciones cerradas</span>` : `<span class="chip">Alineaciones abiertas</span>`}</div></div>${hasResult(md) ? `<span class="score num">${esc(md.gf)}–${esc(md.ga)}</span>` : ""}</div>${body}</div>`;
+  }).join("")}</section>`;
+}
+function statLine(s) {
+  const b = [];
+  if (s.goals) b.push(`G×${s.goals}`); if (s.assists) b.push(`A×${s.assists}`);
+  if (s.yellow) b.push(`<span class="yc" title="Amarilla"></span>${s.yellow > 1 ? "×" + s.yellow : ""}`); if (s.red) b.push(`<span class="rc" title="Roja"></span>`);
+  if (s.mvp) b.push("MVP");
+  return b.length ? "· " + b.join(" ") : "";
+}
+
+function viewRules() {
+  const rows = [["Jugar el partido", "+2"], ["Victoria del equipo (si jugó)", "+1"], ["Derrota del equipo (si jugó)", "−1"], ["Gol de portero o defensa", "+6"], ["Gol de centrocampista", "+5"], ["Gol de delantero", "+4"], ["Asistencia", "+3"], ["Portería a cero (POR, DEF)", "+4"], ["Portería a cero (MED)", "+1"], ["Cada 3 paradas (POR)", "+1"], ["MVP del partido", "+3"], ["Cada 2 goles encajados (POR, DEF)", "−1"], ["Tarjeta amarilla", "−2"], ["Tarjeta roja", "−4"], ["Gol en propia puerta", "−2"], ["Penalti fallado", "−2"], ["Bonus del míster", "a criterio"], ["Capitán", "×2"]];
+  const c = cfg(); const f = FORMATOS[c.formato] || FORMATOS.f7;
+  return `<div class="grid2"><section class="section"><h2>Cómo se puntúa</h2><div class="panel rules">${rows.map(([a, b]) => `<span>${a}</span><span>${b}</span>`).join("")}</div></section>
+    <section class="section"><h2>Cómo se juega</h2><div class="panel section" style="gap:10px">
+      <p style="margin:0">Cada mánager empieza con una <b>plantilla de bots</b> (no puntúan) y <b>${money(c.budget)}</b> en caja. La primera semana se juega con los bots. Después se abre el mercado para fichar hasta ${totalSlots()} compañeros en formato ${esc(f.label)}. Un mismo jugador puede estar en varios equipos fantasy.</p>
+      <p style="margin:0"><b>Mercado diario:</b> todos los días a las 12:00 (hora de Madrid) salen al azar ${marketSize()} de los jugadores que pueden jugar. Solo se puede fichar a los que están en el mercado ese día. Vender se puede siempre.</p>
+      <p style="margin:0"><b>Media:</b> todos empezáis con ${+S.cfg?.startMedia || MEDIA_INICIAL}. Después de cada partido que juegues, tu media cambia lo que hayas puntuado menos 3: con 8 puntos sube 5, con 1 punto baja 2 (como mucho +10 o −8 por partido, entre 1 y 99). Si no juegas, no cambia.</p>
+      <p style="margin:0"><b>Valor de mercado:</b> cada punto de media hace que valgas un 4 % más. Con media 50 vales ${money(price50())}, con 60 unos ${money(priceForMedia(60))} y con 70 unos ${money(priceForMedia(70))}. Las tarjetas y las derrotas restan puntos, así que también bajan tu media y tu precio. Si vendes a alguien, cobras lo que valga en ese momento.</p>
+      <p style="margin:0">Antes de cada partido el administrador <b>cierra las alineaciones</b>: lo que tengas guardado en ese momento es lo que puntúa esa jornada.</p>
+      <p style="margin:0">Después del partido mete el resultado y las estadísticas de cada uno, y la clasificación se actualiza sola para todos.</p>
+      <p style="margin:0">Solo puntúan los que juegan. Si alguien no va al partido, saca 0.</p></div></section></div>`;
+}
+
+// ---------- Admin ----------
+function viewAdmin() {
+  if (!S.owner) return `<div class="empty"><h3>Solo para el administrador</h3><p class="muted">El dueño de la liga gestiona jugadores, jornadas y estadísticas.</p></div>`;
+  const c = cfg();
+  const ps = Object.values(S.players).sort((a, b) => POS_ORDER.indexOf(a.pos) - POS_ORDER.indexOf(b.pos) || a.name.localeCompare(b.name));
+  const np = S.newPlayer ||= { name: "", pos: "MED", dorsal: "", media: "" };
+  const S2 = S.adminCfg ||= { ...c };
+  let html = `<section class="section"><h2>Jornadas</h2>
+    <div class="panel row" style="align-items:end">
+      <div class="field" style="flex:1 1 180px"><label for="nm-rival">Rival</label><input id="nm-rival" data-bind="newMd.rival" placeholder="Atlético Polígono" value="${esc(S.newMd?.rival || "")}"></div>
+      <div class="field"><label for="nm-date">Fecha</label><input id="nm-date" type="date" data-bind="newMd.date" value="${esc(S.newMd?.date || "")}"></div>
+      <button class="btn primary" data-act="md-create">Crear jornada ${mdList().length + 1}</button></div>
+    ${mdList().reverse().map(mdEditor).join("")}</section>`;
+  const pend = Object.values(S.signups).filter((x) => !S.players[x.id]).sort(bySquad);
+  if (pend.length) html += `<section class="section"><div class="row spread"><h2>Apuntados nuevos</h2><button class="btn primary" data-act="signups-add">Añadir ${pend.length} al mercado con media ${+S.cfg?.startMedia || MEDIA_INICIAL}</button></div><div class="tablebox"><table><tbody>${pend.map((x) => `<tr><td>${who({ ...x, photo: null })}</td><td class="r"><button class="btn small danger" data-act="signup-remove" data-id="${esc(x.id)}">${S.confirmDel === x.id ? "¿Seguro?" : "Quitar"}</button></td></tr>`).join("")}</tbody></table></div></section>`;
+  html += `<section class="section"><div class="row spread"><h2>Plantilla</h2><span class="muted">${ps.length} jugadores</span></div>
+    <div class="panel row" style="align-items:end">
+      <div class="field" style="flex:2 1 160px"><label for="np-name">Nombre</label><input id="np-name" data-bind="newPlayer.name" value="${esc(np.name)}"></div>
+      <div class="field" style="flex:1 1 100px"><label for="np-pos">Posición</label><select id="np-pos" data-bind="newPlayer.pos">${POS_ORDER.map((k) => `<option ${np.pos === k ? "selected" : ""}>${k}</option>`).join("")}</select></div>
+      <div class="field" style="flex:1 1 70px"><label for="np-dorsal">Dorsal</label><input id="np-dorsal" data-bind="newPlayer.dorsal" value="${esc(np.dorsal)}"></div>
+      <div class="field" style="flex:1 1 80px"><label for="np-media">Media</label><input id="np-media" type="number" min="1" max="99" data-bind="newPlayer.media" value="${esc(np.media)}" placeholder="${+S.cfg?.startMedia || MEDIA_INICIAL}"></div>
+      <button class="btn primary" data-act="player-add">Añadir</button></div>
+    ${ps.length ? `<div class="tablebox"><table><thead><tr><th>Jugador</th><th class="r">Valor</th><th class="r">Puntos</th><th></th></tr></thead><tbody>${ps.map((p) => `<tr><td>${who(p)}</td><td class="r num">${money(priceOf(p))}<br><small class="muted">empezó con ${esc(p.media ?? MEDIA_INICIAL)}</small></td><td class="r num">${seasonPts(p)}</td><td class="r"><div class="row" style="justify-content:flex-end;flex-wrap:nowrap;gap:6px"><button class="btn small ${p.available === false ? "danger" : ""}" data-act="avail-toggle" data-id="${esc(p.id)}" aria-pressed="${p.available !== false}" title="Si no puede jugar, no sale en el mercado">${p.available === false ? "No disponible" : "Disponible"}</button><button class="btn small" data-act="cap-toggle" data-col="players" data-id="${esc(p.id)}" aria-pressed="${!!p.isCaptain}">${p.isCaptain ? "Quitar capitán" : "Capitán"}</button><button class="btn small" data-act="player-edit" data-id="${esc(p.id)}">Editar</button></div></td></tr>`).join("")}</tbody></table></div>` : ""}</section>`;
+  html += `<section class="section"><h2>Mercado</h2><div class="panel section">
+      <p style="margin:0">${marketOpen() ? `El mercado está <b>abierto</b>. Hoy salen ${todayMarket().length} jugadores y cambia en <span data-countdown>${fmtMins(minsToChange())}</span>.` : `El mercado abre el <b>${esc(fmtDateTime(S.cfg.marketOpensAt))}</b>. Hasta entonces los mánagers juegan con bots.`}</p>
+      <div class="row">${marketOpen() ? "" : `<button class="btn primary" data-act="market-open-now">Abrir el mercado ya</button>`}<button class="btn" data-act="market-reroll">Cambiar el mercado de hoy</button>${S.cfg?.marketOpensAt && marketOpen() ? `<button class="btn" data-act="market-close-week">Cerrarlo otra semana</button>` : ""}</div>
+      <p class="muted" style="margin:0;font-size:13px">"Cambiar el mercado de hoy" saca otro grupo al azar sin esperar a las 12:00. Sirve para probar. En la plantilla puedes marcar quién no puede jugar (lesionado, no convocado) para que no salga en el mercado.</p></div></section>`;
+  html += `<section class="section"><h2>Ajustes de la liga</h2><div class="panel section"><div class="fields">
+      <div class="field"><label for="ac-name">Nombre de la liga</label><input id="ac-name" data-bind="adminCfg.name" value="${esc(S2.name)}"></div>
+      <div class="field"><label for="ac-club">Vuestro equipo</label><input id="ac-club" data-bind="adminCfg.club" value="${esc(S2.club)}"></div>
+      <div class="field"><label for="ac-formato">Formato</label><select id="ac-formato" data-bind="adminCfg.formato">${Object.entries(FORMATOS).map(([k, f]) => `<option value="${k}" ${S2.formato === k ? "selected" : ""}>${f.label}</option>`).join("")}</select></div>
+      <div class="field"><label for="ac-budget">Presupuesto (M)</label><input id="ac-budget" type="number" min="10" data-bind="adminCfg.budget" value="${esc(S2.budget)}"></div>
+      <div class="field"><label for="ac-msize">Jugadores en el mercado cada día</label><input id="ac-msize" type="number" min="1" max="40" data-bind="adminCfg.marketSize" value="${esc(S2.marketSize ?? 8)}"></div></div>
+      <p class="muted" style="margin:0;font-size:13px">Si cambias el formato, los mánagers tendrán que rehacer la alineación para que cuadre. Las jornadas ya cerradas no cambian.</p>
+      <div class="row"><button class="btn primary" data-act="cfg-save">Guardar ajustes</button></div></div>
+      <div class="note">Para que tus compañeros jueguen, comparte esta página con ellos desde el botón de compartir, con permiso para editar. Cada uno crea su equipo en "Mi equipo"; solo tú ves esta pestaña.</div></section>`;
+  return html;
+}
+function defaultPriceFor(budget, formato) { const n = Object.values((FORMATOS[formato] || FORMATOS.f7).slots).reduce((x, y) => x + y, 0); return Math.max(0.5, Math.round((budget / n) * 0.85 * 2) / 2); }
+function defaultPrice() { const c = cfg(); return defaultPriceFor(c.budget, c.formato); }
+
+function matchappBlock(md) {
+  const st = S.importState?.[md.id];
+  if (!S.sample) return `<div class="note">Para leer el acta de Matchapp automáticamente, abre la página en la app de Claude o en el navegador con tu cuenta. Mientras tanto, mete los datos a mano. Las paradas se cuentan con el botón "Contar" al lado del portero mientras veis el vídeo.</div>`;
+  return `<div class="panel section" style="gap:8px;background:var(--surface-2)"><div class="row spread"><div><b>Acta de Matchapp</b><br><small class="muted">Sube una o varias capturas del acta del partido (alineación, goles, tarjetas) y se rellena la tabla. Revisa y pulsa Guardar.</small></div>
+    <label class="btn ${st?.busy ? "" : "primary"}" for="mx-${esc(md.id)}">${st?.busy ? "Leyendo…" : "Subir capturas"}</label><input id="mx-${esc(md.id)}" data-matchapp="${esc(md.id)}" type="file" accept="${esc(S.sampleLim.mediaTypes.join(","))}" multiple hidden ${st?.busy ? "disabled" : ""}></div>
+    ${st?.msg ? `<div class="note ${st.warn ? "warn" : ""}">${esc(st.msg)}</div>` : ""}
+    <small class="muted">Las paradas no salen en el acta. Mientras veis el vídeo, pulsa "Contar" al lado del portero y toca +1 en cada parada.</small></div>`;
+}
+async function importMatchapp(mid, files) {
+  const lim = S.sampleLim; const md = S.mds[mid]; const d = S.mdDraft[mid];
+  const imgs = [...files].filter((f) => lim.mediaTypes.includes(f.type) && f.size <= lim.maxInputBytes).slice(0, lim.maxCount);
+  S.importState ||= {};
+  if (!imgs.length) { S.importState[mid] = { msg: "Esas imágenes no valen: usa capturas JPG o PNG.", warn: true }; render(); return; }
+  S.importState[mid] = { busy: true }; render();
+  const roster = Object.values(S.players).map((p) => ({ id: p.id, name: p.name, dorsal: p.dorsal || "", pos: p.pos }));
+  const prompt = `Estas imágenes son capturas de la app Matchapp con el acta de un partido de fútbol base.
+Nuestro equipo es "${cfg().club}". El rival que tenemos apuntado es "${d.rival || md.rival || "desconocido"}".
+Esta es nuestra plantilla (id, nombre, dorsal, posición):
+${JSON.stringify(roster)}
+
+Lee SOLO los datos de nuestro equipo y emparéjalos con la plantilla por dorsal y nombre (los nombres del acta pueden venir con apellidos o en mayúsculas). Si un jugador del acta no está en la plantilla, ponlo en "unmatched".
+Responde solo con un JSON con esta forma:
+{"rival": string|null, "ourGoals": number|null, "theirGoals": number|null,
+ "players": [{"id": "id de la plantilla", "played": true, "goals": 0, "yellow": 0, "red": false, "ownGoals": 0}],
+ "unmatched": ["nombre tal como sale en el acta"]}
+"played" es true si salió de titular o entró de suplente. Usa null en lo que no se vea en las imágenes.`;
+  try {
+    const r = await S.sample.json(prompt, { images: imgs, modelTier: "default" });
+    const ids = new Set(roster.map((x) => x.id)); let n = 0;
+    const num = (v, max) => Math.max(0, Math.min(max, Math.round(+v || 0)));
+    for (const x of Array.isArray(r?.players) ? r.players : []) {
+      if (!ids.has(x?.id)) continue;
+      const cur = d.stats[x.id] || {};
+      d.stats[x.id] = { ...cur, played: !!x.played || num(x.goals, 20) > 0, goals: num(x.goals, 20) || "", yellow: num(x.yellow, 2) || "", red: !!x.red, og: num(x.ownGoals, 5) || "" };
+      n++;
+    }
+    if (Number.isFinite(+r?.ourGoals) && r?.ourGoals !== null) d.gf = String(num(r.ourGoals, 99));
+    if (Number.isFinite(+r?.theirGoals) && r?.theirGoals !== null) d.ga = String(num(r.theirGoals, 99));
+    if (!d.rival && typeof r?.rival === "string") d.rival = r.rival.slice(0, 40);
+    const un = (Array.isArray(r?.unmatched) ? r.unmatched : []).filter((x) => typeof x === "string").slice(0, 20);
+    S.importState[mid] = { msg: n ? `Leídos ${n} jugadores${d.gf !== "" ? ` y el resultado ${d.gf}–${d.ga}` : ""}. Revisa la tabla y pulsa "Guardar jornada".${un.length ? ` No he encontrado en la plantilla a: ${un.join(", ").replace(/\.$/, "")}.` : ""}` : "No he podido leer jugadores de nuestro equipo en esas capturas. Prueba con una captura más nítida del acta.", warn: !n || un.length > 0 };
+  } catch (e) {
+    S.importState[mid] = { msg: e?.code === "not_granted" ? "Has denegado el permiso para que Claude lea las capturas. Puedes activarlo en los permisos de la página." : e?.code === "rate_limited" ? "Demasiadas lecturas seguidas. Espera un poco y vuelve a probar." : "No se ha podido leer el acta. Vuelve a probar o mete los datos a mano.", warn: true };
+  }
+  render();
+}
+function mdEditor(md) {
+  const d = S.mdDraft[md.id] ||= JSON.parse(JSON.stringify({ gf: md.gf ?? "", ga: md.ga ?? "", rival: md.rival || "", date: md.date || "", stats: md.stats || {} }));
+  const open = S.openMd === "a:" + md.id;
+  let body = "";
+  if (open) {
+    const ps = Object.values(S.players).sort((a, b) => POS_ORDER.indexOf(a.pos) - POS_ORDER.indexOf(b.pos) || a.name.localeCompare(b.name));
+    const n = (pid, k, max = 20) => `<input type="number" min="0" max="${max}" aria-label="${k}" data-stat="${esc(md.id)}|${esc(pid)}|${k}" value="${esc(d.stats[pid]?.[k] || "")}">`;
+    const ck = (pid, k) => `<input type="checkbox" aria-label="${k}" data-stat="${esc(md.id)}|${esc(pid)}|${k}" ${d.stats[pid]?.[k] ? "checked" : ""}>`;
+    body = `<div class="section" style="margin-top:12px">
+      <div class="fields">
+        <div class="field"><label for="md-rival-${esc(md.id)}">Rival</label><input id="md-rival-${esc(md.id)}" data-bind="mdDraft.${esc(md.id)}.rival" value="${esc(d.rival)}"></div>
+        <div class="field"><label for="md-date-${esc(md.id)}">Fecha</label><input id="md-date-${esc(md.id)}" type="date" data-bind="mdDraft.${esc(md.id)}.date" value="${esc(d.date)}"></div>
+        <div class="field"><label for="md-gf-${esc(md.id)}">Goles nuestros</label><input id="md-gf-${esc(md.id)}" type="number" min="0" data-bind="mdDraft.${esc(md.id)}.gf" value="${esc(d.gf)}"></div>
+        <div class="field"><label for="md-ga-${esc(md.id)}">Goles del rival</label><input id="md-ga-${esc(md.id)}" type="number" min="0" data-bind="mdDraft.${esc(md.id)}.ga" value="${esc(d.ga)}"></div>
+      </div>
+      ${matchappBlock(md)}
+      <div class="tablebox stats"><table><thead><tr><th>Jugador</th><th title="Jugó">Jugó</th><th title="Goles">Gol</th><th title="Asistencias">Asis</th><th title="Paradas (porteros)">Par</th><th title="Amarillas">Am</th><th title="Roja">Roja</th><th title="Goles en propia">PP</th><th title="Penaltis fallados">PF</th><th title="MVP">MVP</th><th title="Bonus del míster (puede ser negativo)">Bonus</th><th class="r">Pts</th></tr></thead><tbody>
+      ${ps.map((p) => `<tr><td>${esc(p.name)} <span class="pos ${esc(p.pos)}">${esc(p.pos)}</span></td><td>${ck(p.id, "played")}</td><td>${n(p.id, "goals")}</td><td>${n(p.id, "assists")}</td><td>${p.pos === "POR" ? `<div class="row" style="gap:4px;flex-wrap:nowrap">${n(p.id, "saves", 60)}<button class="btn small" data-act="saves-open" data-md="${esc(md.id)}" data-id="${esc(p.id)}" title="Contador de paradas para usar mientras ves el vídeo">Contar</button></div>` : ""}</td><td>${n(p.id, "yellow", 2)}</td><td>${ck(p.id, "red")}</td><td>${n(p.id, "og", 5)}</td><td>${n(p.id, "penMiss", 5)}</td><td>${ck(p.id, "mvp")}</td><td><input type="number" min="-10" max="10" aria-label="bonus" data-stat="${esc(md.id)}|${esc(p.id)}|bonus" value="${esc(d.stats[p.id]?.bonus || "")}"></td><td class="r num">${playerPts(p, { ...d, stats: d.stats })}</td></tr>`).join("")}
+      </tbody></table></div>
+      <div class="row spread">
+        <div class="row">${md.lineups ? `<span class="chip lock">Alineaciones cerradas · ${Object.keys(md.lineups).length} equipos</span><button class="btn small" data-act="md-unlock" data-id="${esc(md.id)}">Reabrir</button>` : `<button class="btn" data-act="md-lock" data-id="${esc(md.id)}">Cerrar alineaciones</button>`}
+          <button class="btn danger small" data-act="md-delete" data-id="${esc(md.id)}">${S.confirmDel === md.id ? "Pulsa otra vez para borrar" : "Borrar jornada"}</button></div>
+        <button class="btn primary" data-act="md-save" data-id="${esc(md.id)}">Guardar jornada</button></div>
+      <p class="muted" style="margin:0;font-size:13px">Cierra las alineaciones antes del partido: se guarda una foto de cada equipo fantasy y eso es lo que puntúa. Marca "Jugó" en cada jugador que salió al campo.</p></div>`;
+  }
+  return `<div class="panel"><div class="match clickable" data-act="toggle-md" data-id="a:${esc(md.id)}" role="button" tabindex="0" aria-expanded="${open}"><div><div class="eyebrow">Jornada ${esc(md.number)} · ${esc(fmtDate(md.date))}</div><h3>vs ${esc(md.rival || "Rival por decidir")}</h3><div class="row" style="margin-top:4px">${resultChip(md)}${md.lineups ? `<span class="chip lock">Cerradas</span>` : ""}</div></div>${hasResult(md) ? `<span class="score num">${esc(md.gf)}–${esc(md.ga)}</span>` : `<span class="btn small">Editar</span>`}</div>${body}</div>`;
+}
+
+// ---------- Modales ----------
+function renderModal() {
+  const m = S.modal; const root = $("#modalRoot");
+  if (!m) { root.replaceChildren(); return; }
+  let inner = "";
+  if (m.type === "pick") {
+    const d = ensureDraft(); const left = cashOf(d.moves); const open = marketOpen();
+    const ps = todayMarket().filter((p) => p.pos === m.pos && !d.players.includes(p.id));
+    inner = `<div class="row spread"><h3>Fichar ${POS[m.pos].n.toLowerCase()}</h3><span class="muted num">En caja: ${money(left)}</span></div>
+      ${open ? "" : `<div class="note">El mercado abre el ${esc(fmtDateTime(S.cfg.marketOpensAt))}. Hasta entonces puedes mirar, pero no fichar.</div>`}
+      <div class="list">${ps.map((p) => { const pr = priceOf(p); const can = open && pr <= left; return `<div class="item"><div>${who(p, `· ${seasonPts(p)} pts ${trend(p)}`)}</div><button class="btn small ${can ? "primary" : ""}" data-act="pick" data-id="${esc(p.id)}" ${can ? "" : "disabled"}>${money(pr)}</button></div>`; }).join("") || `<p class="muted">Hoy no hay ningún ${POS[m.pos].n.toLowerCase()} en el mercado.</p>`}</div>
+      <p class="muted" style="margin:0;font-size:13px">Solo se puede fichar a los que están hoy en el mercado. Cambia en <span data-countdown>${fmtMins(minsToChange())}</span>, a las 12:00.</p>`;
+  } else if (m.type === "slot") {
+    const p = S.players[m.id]; const d = ensureDraft();
+    inner = `${who(p, `· vale ${money(priceOf(p))} ${trend(p)}`)}<div class="row"><button class="btn primary" data-act="captain" data-id="${esc(p.id)}" ${d.captain === p.id ? "disabled" : ""}>${d.captain === p.id ? "Ya es tu capitán (×2)" : "Hacer capitán (×2)"}</button><button class="btn" data-act="swap" data-id="${esc(p.id)}">Cambiar por otro</button><button class="btn danger" data-act="unpick" data-id="${esc(p.id)}">Vender por ${money(priceOf(p))}</button>${marketOpen() ? "" : `<span class="muted" style="font-size:13px">Si vendes ahora, hasta que abra el mercado su hueco lo ocupará un bot.</span>`}<button class="btn" data-act="show-player" data-id="${esc(p.id)}">Ver ficha</button></div>`;
+  } else if (m.type === "player") {
+    const p = S.players[m.id]; if (!p) { S.modal = null; root.replaceChildren(); return; }
+    const hist = scoredMds().filter((md) => md.stats?.[p.id]?.played).reverse();
+    inner = `<div class="row spread"><div class="who">${avatar(p, 72)}${photoAv(p, 56)}<div><h3>${esc(p.name)} ${armband(p)}</h3><small class="muted"><span class="pos ${esc(p.pos)}">${esc(p.pos)}</span> ${esc(POS[p.pos]?.n || "")} ${p.dorsal ? "· dorsal " + esc(p.dorsal) : ""}</small></div></div><div style="text-align:right">${ovr(p)}<br><small class="muted">media</small></div></div>
+      <div class="budget"><div><span class="eyebrow">Puntos</span><b class="num">${seasonPts(p)}</b></div><div><span class="eyebrow">Valor</span><b class="num">${money(priceOf(p))}</b></div><div><span class="eyebrow">Lo tienen</span><b class="num">${ownership(p.id)}%</b></div></div>
+      ${trend(p) ? `<div>Último partido: ${trend(p)}</div>` : ""}
+      ${hist.length ? `<div class="list">${hist.map((md) => `<div class="item"><div><b>J${esc(md.number)} vs ${esc(md.rival || "")}</b><br><small class="muted">${breakdown(p, md).map(([l, v]) => `${esc(l)} ${v > 0 ? "+" : ""}${v}`).join(" · ")} · media ${mediaDelta(p, md) >= 0 ? "+" : "−"}${Math.abs(mediaDelta(p, md))}</small></div>${ptsEl(playerPts(p, md))}</div>`).join("")}</div>` : `<p class="muted">Todavía no ha jugado ninguna jornada con resultado.</p>`}`;
+  } else if (m.type === "team" || m.type === "mdteam") {
+    const t = S.teams[m.id]; const md = m.md ? S.mds[m.md] : null;
+    const lu = md ? lineupFor(md, m.id) : t; const ids = lu?.players || [];
+    inner = `<div class="row spread"><div><div class="eyebrow">${md ? `J${esc(md.number)} vs ${esc(md.rival || "")}` : esc(managerName(m.id))}</div><h3>${esc(t?.name || "Equipo")}</h3></div><span class="pts num">${md ? managerMdPts(md, m.id) : managerTotal(m.id)}</span></div>
+      <div class="list">${ids.map((id) => S.players[id] || (lu.snap?.[id] && { ...lu.snap[id], id })).filter(Boolean).sort((a, b) => POS_ORDER.indexOf(a.pos) - POS_ORDER.indexOf(b.pos)).map((p) => { const cap = lu.captain === p.id; const v = md ? playerPts(p, md) * (cap ? 2 : 1) : seasonPts(p); return `<div class="item">${who(p, cap ? "· Capitán" : "")}${ptsEl(v)}</div>`; }).join("")}</div>
+      ${!md ? `<p class="muted" style="margin:0;font-size:13px">Alineación actual · valor del equipo ${money(teamValue(ids.filter((id) => S.players[id])))} · caja ${money(cashOf(teamMoves(t)))}. Los puntos de cada jugador son de toda la temporada.</p>` : ""}`;
+  } else if (m.type === "saves") {
+    const p = S.players[m.id]; const d = S.mdDraft[m.md]; const md = S.mds[m.md];
+    const v = +d?.stats?.[m.id]?.saves || 0;
+    inner = `<div><div class="eyebrow">Jornada ${esc(md?.number)} · vs ${esc(d?.rival || md?.rival || "")}</div><h3>Paradas de ${esc(p?.name)}</h3></div>
+      <p class="muted" style="margin:0;font-size:14px">Pon el vídeo en la tele o en otra pantalla y toca el botón grande en cada parada. Cuenta como parada un tiro a puerta que para el portero, no los que van fuera.</p>
+      <div class="saves-count num" aria-live="polite">${v}</div>
+      <button class="btn primary saves-big" data-act="saves-inc" data-v="1">+1 parada</button>
+      <div class="row"><button class="btn" data-act="saves-inc" data-v="-1" ${v ? "" : "disabled"}>Quitar una</button><span class="muted" style="font-size:13px">Suma ${Math.floor(v / 3)} punto${Math.floor(v / 3) === 1 ? "" : "s"} (1 cada 3 paradas). Al terminar, cierra y pulsa "Guardar jornada".</span></div>`;
+  } else if (m.type === "edit") {
+    const e = m.draft;
+    inner = `<h3>Editar jugador</h3><div class="row">${avatar(e, 64)}${photoAv(e, 56)}${S.assets ? `<label class="btn small" for="ed-photo">Subir foto</label><input id="ed-photo" type="file" accept="image/*" hidden>${e.photo ? `<button class="btn small" data-act="edit-nophoto">Quitar foto</button>` : ""}` : `<span class="muted" style="font-size:13px">Las fotos se pueden subir siendo editor de la página.</span>`}</div>
+      <div class="fields"><div class="field"><label for="ed-name">Nombre</label><input id="ed-name" data-bind="modal.draft.name" value="${esc(e.name)}"></div>
+      <div class="field"><label for="ed-pos">Posición</label><select id="ed-pos" data-bind="modal.draft.pos">${POS_ORDER.map((k) => `<option ${e.pos === k ? "selected" : ""}>${k}</option>`).join("")}</select></div>
+      <div class="field"><label for="ed-dorsal">Dorsal</label><input id="ed-dorsal" data-bind="modal.draft.dorsal" value="${esc(e.dorsal)}"></div>
+      <div class="field"><label for="ed-media">Media inicial</label><input id="ed-media" type="number" min="1" max="99" data-bind="modal.draft.media" value="${esc(e.media ?? MEDIA_INICIAL)}"></div></div>
+      <p class="muted" style="margin:0;font-size:13px">La media de ahora (${mediaOf(S.players[e.id])}) es la inicial más lo que ha ganado o perdido en cada partido.</p>
+      <div class="row spread"><button class="btn danger" data-act="player-delete" data-id="${esc(e.id)}">${S.confirmDel === e.id ? "Pulsa otra vez para borrar" : "Borrar jugador"}</button><button class="btn primary" data-act="player-save">Guardar</button></div>`;
+  }
+  root.innerHTML = `<div class="overlay" data-act="close-modal"><div class="sheet" role="dialog" aria-modal="true">${inner}<button class="btn" data-act="close-modal">Cerrar</button></div></div>`;
+}
+
+// ---------- Escrituras ----------
+async function write(fn, okMsg) {
+  if (S.saving) return; S.saving = true;
+  try { await fn(); if (okMsg) toast(okMsg); }
+  catch (e) {
+    const code = e?.code;
+    toast(code === "invalid_argument" ? "No tienes permiso para guardar esto." : code === "quota_exceeded" ? "La liga ha llegado al límite de datos." : "No se ha podido guardar. Inténtalo otra vez.");
+    if (code === "invalid_argument" && S.canWrite !== true) S.canWrite = false;
+  } finally { S.saving = false; schedule(); }
+}
+const actions = {
+  join: () => {
+    const j = S.join || {}; const name = String(j.name || "").trim(); const dorsal = parseInt(j.dorsal, 10);
+    if (!name) return toast("Escribe tu nombre");
+    if (!(dorsal >= 1 && dorsal <= 99)) return toast("Pon tu dorsal (de 1 a 99)");
+    if (!POS[j.pos]) return toast("Elige tu posición");
+    const clash = Object.values(S.signups).find((x) => x.id !== S.uid && +x.dorsal === dorsal);
+    if (clash) return toast(`El dorsal ${dorsal} ya lo tiene ${clash.name}`);
+    const prev = S.signups[S.uid];
+    write(async () => { await S.db.doc("signups/" + S.uid).set({ name: name.slice(0, 30), dorsal: String(dorsal), pos: j.pos, isCaptain: !!prev?.isCaptain, joinedAt: prev?.joinedAt || new Date().toISOString() }); S.join = null; S.editJoin = false; }, prev ? "Datos guardados" : "¡Apuntado!");
+  },
+  "join-edit": () => { S.editJoin = true; S.join = null; render(); },
+  "join-cancel": () => { S.editJoin = false; S.join = null; render(); },
+  "signup-remove": (el) => {
+    if (S.confirmDel !== el.dataset.id) { S.confirmDel = el.dataset.id; render(); return; }
+    S.confirmDel = null; write(() => S.db.doc("signups/" + el.dataset.id).delete(), "Quitado de la lista");
+  },
+  "league-start": () => {
+    const a = S.adminCfg; const budget = Math.max(5, +a.budget || 30);
+    const media = Math.max(1, Math.min(99, Math.round(+a.startMedia || MEDIA_INICIAL))); const p50 = defaultPriceFor(budget, a.formato);
+    const su = Object.values(S.signups);
+    write(async () => {
+      for (const x of su) if (!S.players[x.id]) await S.db.doc("players/" + x.id).set({ name: x.name, pos: x.pos, dorsal: x.dorsal, media, isCaptain: !!x.isCaptain });
+      const { startMedia, ...rest } = a;
+      await S.db.doc("league/config").set({ ...(S.cfg || {}), ...rest, name: (a.name || "Liga Fantasy").slice(0, 50), club: (a.club || "").slice(0, 50), budget, price50: p50, startMedia: media, marketSize: +S.cfg?.marketSize || 8, marketOpensAt: new Date(Date.now() + 7 * 864e5).toISOString(), marketSalt: "", started: true, startedAt: new Date().toISOString() });
+      S.adminCfg = null; location.hash = "equipo";
+    }, `Liga creada: ${su.length} jugadores en el mercado`);
+  },
+  "signups-add": () => {
+    const pend = Object.values(S.signups).filter((x) => !S.players[x.id]); const media = +S.cfg?.startMedia || MEDIA_INICIAL;
+    write(async () => { for (const x of pend) await S.db.doc("players/" + x.id).set({ name: x.name, pos: x.pos, dorsal: x.dorsal, media, isCaptain: !!x.isCaptain }); }, `${pend.length} añadidos al mercado`);
+  },
+  "show-player": (el) => { S.modal = { type: "player", id: el.dataset.id }; renderModal(); },
+  "show-team": (el) => { S.modal = { type: "team", id: el.dataset.id }; renderModal(); },
+  "show-md-team": (el) => { S.modal = { type: "mdteam", id: el.dataset.id, md: el.dataset.md }; renderModal(); },
+  "close-modal": (el, ev) => { if (ev.target !== el) return; const was = S.modal?.type; S.modal = null; S.confirmDel = null; if (was === "saves") render(); else renderModal(); },
+  "slot-pick": (el) => { S.modal = { type: "pick", pos: el.dataset.pos, bot: el.dataset.bot || null }; renderModal(); },
+  "slot-player": (el) => { S.modal = { type: "slot", id: el.dataset.id }; renderModal(); },
+  pick: (el) => {
+    const d = ensureDraft(); const pid = el.dataset.id;
+    if (!marketOpen() || !inMarket(pid)) { toast("Ese jugador ya no está en el mercado de hoy"); S.modal = null; render(); return; }
+    if (!draftBuy(d, pid, S.modal?.bot)) { toast("Tienes esa posición llena: vende primero a alguien"); return; }
+    if (!d.captain) d.captain = pid; d.dirty = true; S.modal = null; render();
+  },
+  "mk-buy": (el) => {
+    const pid = el.dataset.id; const p = S.players[pid];
+    if (!myTeam()) { location.hash = "equipo"; toast("Primero ponle nombre a tu equipo y guárdalo"); return; }
+    if (!marketOpen() || !inMarket(pid)) { toast("Ese jugador ya no está en el mercado de hoy"); return; }
+    const d = ensureDraft();
+    if (!draftBuy(d, pid)) { toast(`Tienes llena la posición ${p.pos}: vende a alguien en Mi equipo`); return; }
+    if (cashOf(d.moves) < 0) { S.draft = null; toast("No tienes dinero suficiente"); render(); return; }
+    if (!d.captain) d.captain = pid;
+    write(async () => { await S.db.doc("teams/" + S.uid).set({ name: d.name.trim().slice(0, 40) || myTeam().name, players: d.players, captain: d.captain, moves: d.moves, updatedAt: new Date().toISOString() }); S.draft = null; }, `${p.name} fichado por ${money(priceOf(p))}`);
+  },
+  unpick: (el) => { const d = ensureDraft(); draftSell(d, el.dataset.id); if (d.captain === el.dataset.id) d.captain = null; d.dirty = true; S.modal = null; render(); },
+  swap: (el) => { const p = S.players[el.dataset.id]; actions.unpick(el); S.modal = { type: "pick", pos: p.pos, bot: null }; renderModal(); },
+  captain: (el) => { ensureDraft().captain = el.dataset.id; S.draft.dirty = true; S.modal = null; render(); },
+  "draft-reset": () => { S.draft = null; render(); },
+  "draft-save": () => {
+    const d = ensureDraft();
+    write(async () => { await S.db.doc("teams/" + S.uid).set({ name: d.name.trim().slice(0, 40), players: d.players, captain: d.captain, moves: d.moves, updatedAt: new Date().toISOString() }); S.draft = null; }, myTeam() ? "Cambios guardados" : "Equipo creado");
+  },
+  "market-pos": (el) => { S.marketPos = el.dataset.v; render(); },
+  "toggle-md": (el) => { S.openMd = S.openMd === el.dataset.id ? null : el.dataset.id; S.confirmDel = null; render(); },
+  "md-create": () => {
+    const nm = S.newMd || {}; const number = mdList().reduce((a, m) => Math.max(a, m.number || 0), 0) + 1; const id = rid("j");
+    write(async () => { await S.db.doc("matchdays/" + id).set({ number, rival: (nm.rival || "").slice(0, 40), date: nm.date || "", gf: "", ga: "", stats: {} }); S.newMd = {}; S.openMd = "a:" + id; }, `Jornada ${number} creada`);
+  },
+  "md-save": (el) => {
+    const id = el.dataset.id; const d = S.mdDraft[id];
+    const stats = {}; for (const [pid, s] of Object.entries(d.stats)) { const clean = {}; for (const [k, v] of Object.entries(s)) if (v) clean[k] = typeof v === "boolean" ? v : +v; if (Object.keys(clean).length) stats[pid] = clean; }
+    const { id: _omit, ...cur } = S.mds[id] || {};
+    write(async () => { await S.db.doc("matchdays/" + id).set({ ...cur, rival: d.rival.slice(0, 40), date: d.date, gf: d.gf === "" ? "" : +d.gf, ga: d.ga === "" ? "" : +d.ga, stats }); delete S.mdDraft[id]; }, "Jornada guardada");
+  },
+  "md-lock": (el) => {
+    const lineups = {};
+    for (const t of Object.values(S.teams)) {
+      if (!t.players?.length) continue;
+      const snap = {}; for (const pid of t.players) { const p = S.players[pid]; if (p) snap[pid] = { name: p.name, pos: p.pos, dorsal: p.dorsal || "", price: priceOf(p) }; }
+      lineups[t.id] = { players: t.players.filter((x) => snap[x]), captain: t.captain || null, snap };
+    }
+    write(() => S.db.doc("matchdays/" + el.dataset.id).update({ lineups, lockedAt: new Date().toISOString() }), `Alineaciones cerradas: ${Object.keys(lineups).length} equipos`);
+  },
+  "md-unlock": (el) => { write(async () => { const ref = S.db.doc("matchdays/" + el.dataset.id); const cur = (await ref.get()).data(); const { lineups, lockedAt, ...rest } = cur; await ref.set(rest); }, "Alineaciones reabiertas"); },
+  "md-delete": (el) => {
+    if (S.confirmDel !== el.dataset.id) { S.confirmDel = el.dataset.id; render(); return; }
+    S.confirmDel = null; write(() => S.db.doc("matchdays/" + el.dataset.id).delete(), "Jornada borrada");
+  },
+  "player-add": () => {
+    const np = S.newPlayer; if (!np.name.trim()) { toast("Escribe el nombre del jugador"); return; }
+    write(async () => { await S.db.doc("players/" + rid("p")).set({ name: np.name.trim().slice(0, 40), pos: np.pos, dorsal: String(np.dorsal || "").slice(0, 3), media: Math.max(1, Math.min(99, Math.round(+np.media || +S.cfg?.startMedia || MEDIA_INICIAL))) }); S.newPlayer = { name: "", pos: np.pos, dorsal: "", media: "" }; }, `${np.name.trim()} añadido`);
+  },
+  "avail-toggle": (el) => { const p = S.players[el.dataset.id]; const on = p.available === false; write(() => S.db.doc("players/" + p.id).update({ available: on }), on ? `${p.name} vuelve al mercado` : `${p.name} no saldrá en el mercado`); },
+  "market-open-now": () => write(() => S.db.doc("league/config").update({ marketOpensAt: new Date().toISOString() }), "Mercado abierto"),
+  "market-close-week": () => write(() => S.db.doc("league/config").update({ marketOpensAt: new Date(Date.now() + 7 * 864e5).toISOString() }), "Mercado cerrado una semana"),
+  "market-reroll": () => write(() => S.db.doc("league/config").update({ marketSalt: Math.random().toString(36).slice(2, 8) }), "Mercado de hoy cambiado"),
+  "cap-toggle": (el) => {
+    const col = el.dataset.col; const id = el.dataset.id; const cur = (col === "players" ? S.players : S.signups)[id];
+    const on = !cur?.isCaptain;
+    write(async () => {
+      await S.db.doc(col + "/" + id).update({ isCaptain: on });
+      const other = col === "players" ? S.signups[id] : S.players[id];
+      if (other) await S.db.doc((col === "players" ? "signups/" : "players/") + id).update({ isCaptain: on });
+    }, on ? `${cur?.name} es capitán` : `${cur?.name} ya no es capitán`);
+  },
+  "league-end": () => {
+    if (!S.confirmEnd) { S.confirmEnd = true; render(); setTimeout(() => { if (S.confirmEnd) { S.confirmEnd = false; render(); } }, 6000); return; }
+    S.confirmEnd = false;
+    write(async () => {
+      for (const t of Object.keys(S.teams)) await S.db.doc("teams/" + t).delete();
+      for (const m of Object.keys(S.mds)) await S.db.doc("matchdays/" + m).delete();
+      for (const p of Object.keys(S.players)) await S.db.doc("players/" + p).delete();
+      await S.db.doc("league/config").set({ ...(S.cfg || {}), started: false, endedAt: new Date().toISOString() });
+      S.draft = null; S.mdDraft = {}; S.adminCfg = null; location.hash = "inicio";
+    }, "Liga finalizada. Los apuntados siguen en la lista para volver a empezar.");
+  },
+  "saves-open": (el) => { S.modal = { type: "saves", md: el.dataset.md, id: el.dataset.id }; renderModal(); },
+  "saves-inc": (el) => {
+    const m = S.modal; const d = S.mdDraft[m.md]; const st = d.stats[m.id] ||= {};
+    st.saves = Math.max(0, Math.min(60, (+st.saves || 0) + +el.dataset.v)); if (st.saves) st.played = true;
+    renderModal();
+  },
+  "player-edit": (el) => { S.confirmDel = null; S.modal = { type: "edit", draft: { ...S.players[el.dataset.id] } }; renderModal(); },
+  "edit-nophoto": () => { S.modal.draft.photo = null; renderModal(); },
+  "player-save": () => {
+    const e = S.modal.draft; if (!e.name?.trim()) { toast("El nombre no puede quedar vacío"); return; }
+    const { id, ...rest } = e;
+    write(async () => { await S.db.doc("players/" + id).set({ ...rest, name: e.name.trim().slice(0, 40), media: Math.max(1, Math.min(99, Math.round(+e.media || MEDIA_INICIAL))), dorsal: String(e.dorsal || "").slice(0, 3), photo: e.photo || null }); S.modal = null; }, "Jugador guardado");
+  },
+  "player-delete": (el) => {
+    if (S.confirmDel !== el.dataset.id) { S.confirmDel = el.dataset.id; renderModal(); return; }
+    S.confirmDel = null; write(async () => { await S.db.doc("players/" + el.dataset.id).delete(); S.modal = null; }, "Jugador borrado");
+  },
+  "cfg-save": () => {
+    const a = S.adminCfg;
+    write(async () => { const { startMedia: _sm, startPrice: _sp, ...rest } = a; await S.db.doc("league/config").set({ ...(S.cfg || {}), ...rest, name: (a.name || "Liga Fantasy").slice(0, 50), club: (a.club || "").slice(0, 50), formato: a.formato, budget: Math.max(5, +a.budget || 30), marketSize: Math.max(1, Math.min(40, Math.round(+a.marketSize || 8))) }); S.adminCfg = null; }, "Ajustes guardados");
+  },
+};
+
+document.addEventListener("click", (ev) => {
+  const el = ev.target.closest("[data-act]"); if (!el) return;
+  const fn = actions[el.dataset.act]; if (!fn) return;
+  if (el.dataset.act !== "close-modal") ev.preventDefault();
+  fn(el, ev);
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.key === "Escape" && S.modal) { const was = S.modal.type; S.modal = null; if (was === "saves") render(); else renderModal(); }
+  if ((ev.key === "Enter" || ev.key === " ") && ev.target.matches?.('[role="button"][data-act]')) { ev.preventDefault(); ev.target.click(); }
+});
+function setPath(path, value) {
+  const keys = path.split("."); let o = S;
+  for (let i = 0; i < keys.length - 1; i++) { o = o[keys[i]] ||= {}; }
+  o[keys[keys.length - 1]] = value;
+}
+document.addEventListener("input", (ev) => {
+  const t = ev.target;
+  if (t.dataset.bind) {
+    setPath(t.dataset.bind, t.value);
+    if (t.dataset.bind === "draft.name" && S.draft) {
+      S.draft.dirty = true; $("#team-msg").textContent = teamMsg(S.draft);
+      $("#team-save").disabled = teamProblems(S.draft).length > 0 || S.canWrite === false;
+    }
+  }
+  if (t.dataset.stat) {
+    const [mid, pid, k] = t.dataset.stat.split("|"); const d = S.mdDraft[mid];
+    const s = d.stats[pid] ||= {};
+    s[k] = t.type === "checkbox" ? t.checked : t.value;
+    if (k !== "played" && t.type !== "checkbox" && +t.value && !s.played) { s.played = true; const pc = t.closest("tr").querySelector('[aria-label="played"]'); if (pc) pc.checked = true; }
+    const p = S.players[pid]; const cell = t.closest("tr").lastElementChild;
+    if (p && cell) cell.textContent = playerPts(p, d);
+  }
+});
+document.addEventListener("change", async (ev) => {
+  const t = ev.target;
+  if (t.dataset.actChange === "market-sort") { S.marketSort = t.value; t.blur(); render(); }
+  if (t.tagName === "SELECT" && t.dataset.bind) { t.blur(); render(); }
+  if (t.dataset.matchapp && t.files?.length && S.sample) { importMatchapp(t.dataset.matchapp, t.files); return; }
+  if (t.id === "ed-photo" && t.files?.[0] && S.assets) {
+    const f = t.files[0];
+    if (f.size > 8 * 1024 * 1024) { toast("La foto pesa demasiado: máximo 8 MB."); return; }
+    toast("Subiendo foto…");
+    try { const r = await S.assets.upload(f); S.modal.draft.photo = r.id; renderModal(); toast("Foto lista. Pulsa Guardar."); }
+    catch { toast("No se ha podido subir la foto."); }
+  }
+});
+window.addEventListener("hashchange", () => { S.modal = null; window.scrollTo(0, 0); render(); });
+render();
+boot();
+})();
+</script>
