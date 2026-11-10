@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>¿Y si la Tierra explotara?</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;}
+  body{display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  canvas{height:100vh;max-width:100vw;aspect-ratio:9/16;display:block;cursor:pointer;}
+  body.render canvas{height:auto;width:1080px;}
+</style>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// ============================================================
+//  ¿Y SI LA TIERRA EXPLOTARA?  — animación vertical 1080x1920
+//  Todo es determinista: renderAt(t) dibuja el segundo t.
+// ============================================================
+const W = 1080, H = 1920, DUR = 66;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const FONT = 'Inter, "Arial Black", Arial, sans-serif';
+const TAU = Math.PI * 2;
+
+// ---------- utilidades ----------
+function mulberry(seed){return function(){seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const rnd = mulberry(20261110);
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const prog=(t,a,b)=>clamp((t-a)/(b-a));
+const lerp=(a,b,k)=>a+(b-a)*k;
+const easeOut=k=>1-Math.pow(1-k,3);
+const easeInOut=k=>k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2;
+const easeBack=k=>{const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(k-1,3)+c1*Math.pow(k-1,2);};
+function win(t,a,b,f=0.3){ if(t<a||t>b) return 0; return Math.min(1,(t-a)/f,(b-t)/f); }
+function mixColor(c1,c2,k){return [lerp(c1[0],c2[0],k),lerp(c1[1],c2[1],k),lerp(c1[2],c2[2],k)];}
+const rgba=(c,a)=>`rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`;
+
+// ---------- datos precalculados ----------
+const STARS = Array.from({length:420},()=>({x:rnd()*W,y:rnd()*H,r:rnd()*1.8+0.3,p:rnd()*TAU,s:rnd()*2+0.5}));
+
+// Globo de puntos (esfera de Fibonacci) con continentes procedurales
+const GLOBE=[];
+{
+  const N=3200, ph=[...Array(6)].map(()=>rnd()*TAU);
+  for(let i=0;i<N;i++){
+    const y=1-(i/(N-1))*2, lat=Math.asin(y), lon=(i*2.399963)%TAU;
+    const f=Math.sin(3*lon+ph[0])*Math.cos(2*lat+ph[1])+0.6*Math.sin(5*lon+2*lat+ph[2])+0.4*Math.sin(7*lon-4*lat+ph[3])+0.25*Math.sin(13*lon+9*lat+ph[4]);
+    const ice=Math.abs(lat)>1.18;
+    if(ice) GLOBE.push({lat,lon,c:[235,245,255]});
+    else if(f>0.5) GLOBE.push({lat,lon,c:f>1.05?[196,170,110]:[70,170,90]});
+  }
+}
+// Grietas
+const CRACKS=[];
+for(let i=0;i<11;i++){
+  let a=rnd()*TAU, x=(rnd()-.5)*.3, y=(rnd()-.5)*.3; const pts=[[x,y]];
+  for(let k=0;k<9;k++){a+=(rnd()-.5)*0.9; x+=Math.cos(a)*0.13; y+=Math.sin(a)*0.13; pts.push([x,y]);}
+  CRACKS.push({pts,delay:rnd()*0.35});
+}
+// Fragmentos de la explosión
+const FRAGS=Array.from({length:650},()=>{
+  const s=Math.pow(rnd(),0.7);
+  return {a:rnd()*TAU,s,sz:2+rnd()*rnd()*16,sp:(rnd()-.5)*6,cool:1.5+rnd()*3,sides:3+(rnd()*4|0),off:rnd()};
+});
+// Partículas del anillo
+const RING=Array.from({length:900},()=>({d:(rnd()*2-1),j:(rnd()*2-1)*(rnd()),b:0.3+rnd()*0.7,sz:0.8+rnd()*2.4,hot:rnd()<0.12}));
+// Impactos sobre la Luna
+const IMPACTS=Array.from({length:16},(_,i)=>{const a=rnd()*TAU, r=Math.sqrt(rnd())*0.8; return {t:35.6+i*0.24+rnd()*0.15,x:Math.cos(a)*r,y:Math.sin(a)*r,s:0.08+rnd()*0.12};});
+const MOON_CRATERS=Array.from({length:9},()=>{const a=rnd()*TAU,r=Math.sqrt(rnd())*0.75;return{x:Math.cos(a)*r,y:Math.sin(a)*r,s:0.07+rnd()*0.14};});
+// Meteoritos (escena planetas)
+const METEORS=Array.from({length:10},()=>({t:52.5+rnd()*6.2,a:rnd()*TAU,tgt:rnd()<0.5?'v':'m'}));
+
+// ---------- dibujo básico ----------
+function bg(t, shift=0){
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#03030c'); g.addColorStop(.5,'#070718'); g.addColorStop(1,'#020208');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+  for(const s of STARS){
+    const a=0.45+0.55*Math.sin(t*s.s+s.p)**2;
+    ctx.fillStyle=`rgba(255,255,255,${a*0.9})`;
+    const y=(s.y+shift*s.r)%H;
+    ctx.beginPath(); ctx.arc(s.x,y,s.r,0,TAU); ctx.fill();
+  }
+}
+
+function glow(x,y,r,color,a=1){
+  const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,rgba(color,a)); g.addColorStop(1,rgba(color,0));
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,TAU); ctx.fill();
+}
+
+function drawEarth(cx,cy,r,rot,crack=0,heat=0){
+  // atmósfera
+  glow(cx,cy,r*1.25,[80,160,255],0.35);
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,TAU); ctx.clip();
+  const og=ctx.createRadialGradient(cx-r*.35,cy-r*.35,r*.1,cx,cy,r);
+  og.addColorStop(0,'#2f8cf0'); og.addColorStop(.7,'#1450b0'); og.addColorStop(1,'#08214f');
+  ctx.fillStyle=og; ctx.fillRect(cx-r,cy-r,2*r,2*r);
+  const dot=r/52;
+  for(const p of GLOBE){
+    const l=p.lon+rot, cl=Math.cos(p.lat);
+    const z=cl*Math.cos(l); if(z<=0) continue;
+    const x=cl*Math.sin(l), y=-Math.sin(p.lat);
+    ctx.fillStyle=rgba(p.c,0.55+0.45*z);
+    ctx.beginPath(); ctx.arc(cx+x*r,cy+y*r,dot*(0.45+0.6*z),0,TAU); ctx.fill();
+  }
+  // sombra (terminador)
+  const sg=ctx.createRadialGradient(cx-r*.45,cy-r*.45,r*.2,cx-r*.2,cy-r*.2,r*1.5);
+  sg.addColorStop(0,'rgba(0,0,0,0)'); sg.addColorStop(.6,'rgba(0,0,10,0.15)'); sg.addColorStop(1,'rgba(0,0,15,0.85)');
+  ctx.fillStyle=sg; ctx.fillRect(cx-r,cy-r,2*r,2*r);
+  // calentamiento
+  if(heat>0){ ctx.fillStyle=`rgba(255,70,20,${heat*0.55})`; ctx.fillRect(cx-r,cy-r,2*r,2*r); }
+  // grietas
+  if(crack>0){
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    for(const c of CRACKS){
+      const k=clamp((crack-c.delay)/(1-c.delay)); if(k<=0) continue;
+      const n=Math.max(2,Math.ceil(c.pts.length*k));
+      for(const [lw,col] of [[r*0.06,'rgba(255,90,0,0.35)'],[r*0.025,'rgba(255,170,40,0.9)'],[r*0.009,'rgba(255,250,210,1)']]){
+        ctx.lineWidth=lw; ctx.strokeStyle=col; ctx.beginPath();
+        for(let i=0;i<n;i++){const [x,y]=c.pts[i]; i?ctx.lineTo(cx+x*r,cy+y*r):ctx.moveTo(cx+x*r,cy+y*r);}
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
+  // borde de atmósfera
+  ctx.strokeStyle='rgba(140,200,255,0.5)'; ctx.lineWidth=r*0.02;
+  ctx.beginPath(); ctx.arc(cx,cy,r,0,TAU); ctx.stroke();
+}
+
+function drawMoon(x,y,r,t,extraCraters=[]){
+  const g=ctx.createRadialGradient(x-r*.35,y-r*.35,r*.1,x,y,r);
+  g.addColorStop(0,'#e8e6e0'); g.addColorStop(.7,'#a9a69f'); g.addColorStop(1,'#55534f');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,TAU); ctx.fill();
+  ctx.save(); ctx.beginPath(); ctx.arc(x,y,r,0,TAU); ctx.clip();
+  for(const c of [...MOON_CRATERS,...extraCraters]){
+    ctx.fillStyle='rgba(70,68,64,0.45)'; ctx.beginPath(); ctx.arc(x+c.x*r,y+c.y*r,c.s*r,0,TAU); ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.18)'; ctx.lineWidth=Math.max(1,c.s*r*0.18);
+    ctx.beginPath(); ctx.arc(x+c.x*r+c.s*r*.12,y+c.y*r+c.s*r*.12,c.s*r,Math.PI*1.1,Math.PI*1.9); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawSun(x,y,r,t,pulse=0){
+  glow(x,y,r*(3.2+pulse*1.5),[255,170,40],0.35+pulse*0.3);
+  glow(x,y,r*1.6,[255,210,90],0.8);
+  const g=ctx.createRadialGradient(x,y,0,x,y,r);
+  g.addColorStop(0,'#fffbe6'); g.addColorStop(.6,'#ffd75a'); g.addColorStop(1,'#ff9a1f');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(x,y,r,0,TAU); ctx.fill();
+}
+
+function poly(x,y,r,sides,rot){
+  ctx.beginPath();
+  for(let i=0;i<sides;i++){const a=rot+i/sides*TAU, rr=r*(0.75+0.25*Math.sin(i*2.7+sides)); i?ctx.lineTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr):ctx.moveTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr);}
+  ctx.closePath(); ctx.fill();
+}
+
+function fragColor(temp){
+  // temp 1 = blanco caliente, 0 = roca fría
+  if(temp>0.6) return mixColor([255,140,40],[255,245,210],(temp-.6)/.4);
+  if(temp>0.25) return mixColor([150,60,30],[255,140,40],(temp-.25)/.35);
+  return mixColor([85,75,68],[150,60,30],temp/.25);
+}
+
+// ---------- textos ----------
+function caption(t,a,b,lines,y,opt={}){
+  const al=win(t,a,b,0.28); if(al<=0) return;
+  const pop=easeBack(prog(t,a,a+0.35));
+  const sc=0.82+0.18*pop;
+  ctx.save(); ctx.globalAlpha=al; ctx.translate(W/2,y); ctx.scale(sc,sc);
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.lineJoin='round';
+  let yy=0;
+  for(const L of lines){
+    const size=L.size||78; ctx.font=`900 ${size}px ${FONT}`;
+    // ajuste de línea
+    const words=L.text.split(' '); const rows=[]; let cur='';
+    for(const w of words){const test=cur?cur+' '+w:w; if(ctx.measureText(test).width>940&&cur){rows.push(cur);cur=w;}else cur=test;}
+    rows.push(cur);
+    for(const row of rows){
+      yy+=size*0.56;
+      ctx.lineWidth=size*0.2; ctx.strokeStyle='rgba(0,0,0,0.9)'; ctx.strokeText(row,0,yy);
+      ctx.fillStyle=L.color||'#fff'; ctx.fillText(row,0,yy);
+      yy+=size*0.56;
+    }
+    yy+=(L.gap||0);
+  }
+  ctx.restore();
+}
+
+function label(text,x,y,size=34,color='rgba(255,255,255,0.85)',a=1){
+  ctx.save(); ctx.globalAlpha=a; ctx.font=`800 ${size}px ${FONT}`; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.lineWidth=size*0.22; ctx.strokeStyle='rgba(0,0,0,0.8)'; ctx.lineJoin='round'; ctx.strokeText(text,x,y);
+  ctx.fillStyle=color; ctx.fillText(text,x,y); ctx.restore();
+}
+
+// ---------- vista del sistema solar (compartida) ----------
+const SUN={x:540,y:1120}, R_V=215, R_E=330, R_M=455;
+const EXP={x:SUN.x, y:SUN.y-R_E};          // donde estaba la Tierra
+const venusA=t=>2.3+t*0.09, marsA=t=>0.35+t*0.025;
+function planet(a,r){return {x:SUN.x+Math.cos(a)*r,y:SUN.y+Math.sin(a)*r};}
+
+function systemBase(t,opts={}){
+  bg(t);
+  ctx.setLineDash([6,12]); ctx.lineWidth=2;
+  for(const [r,a] of [[R_V,0.18],[R_E,opts.earthOrbit??0.25],[R_M,0.18]]){
+    ctx.strokeStyle=`rgba(255,255,255,${a})`; ctx.beginPath(); ctx.arc(SUN.x,SUN.y,r,0,TAU); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  drawSun(SUN.x,SUN.y,70,t,opts.sunPulse||0);
+  const v=planet(venusA(t),R_V), m=planet(marsA(t),R_M);
+  glow(v.x,v.y,30,[255,220,150],0.35); ctx.fillStyle='#f3d9a4'; ctx.beginPath(); ctx.arc(v.x,v.y,15,0,TAU); ctx.fill();
+  glow(m.x,m.y,30,[255,110,60],0.35+(opts.marsFlash||0)*0.6); ctx.fillStyle='#d9643a'; ctx.beginPath(); ctx.arc(m.x,m.y,12,0,TAU); ctx.fill();
+  label('SOL',SUN.x,SUN.y+120,30,'rgba(255,220,140,0.9)');
+  label('VENUS',v.x,v.y+40,24,'rgba(255,255,255,0.7)');
+  label('MARTE',m.x,m.y+38,24,'rgba(255,170,140,0.85)');
+  return {v,m};
+}
+
+function drawRing(t,spread,orbitShift){
+  for(const p of RING){
+    const a=-Math.PI/2+p.d*spread+orbitShift;
+    const rr=R_E+p.j*(8+26*Math.min(1,spread/1.5));
+    const x=SUN.x+Math.cos(a)*rr, y=SUN.y+Math.sin(a)*rr;
+    if(p.hot){ctx.fillStyle=`rgba(255,160,70,${p.b})`;}
+    else ctx.fillStyle=`rgba(190,175,160,${p.b*0.85})`;
+    ctx.beginPath(); ctx.arc(x,y,p.sz,0,TAU); ctx.fill();
+  }
+}
+
+// ============================================================
+//  ESCENAS
+// ============================================================
+function scene0(t){ // 0-5 gancho
+  bg(t,t*4);
+  const r=330+Math.sin(t*1.5)*4;
+  const cx=540, cy=1080;
+  const ma=t*0.9+2;
+  const mx=cx+Math.cos(ma)*470, my=cy+Math.sin(ma)*150;
+  if(Math.sin(ma)<0) drawMoon(mx,my,48,t);
+  drawEarth(cx,cy,r,t*0.35);
+  if(Math.sin(ma)>=0) drawMoon(mx,my,48,t);
+  caption(t,0.05,5,[{text:'¿Y SI LA TIERRA',size:96},{text:'EXPLOTARA?',size:132,color:'#ffd84a'}],360);
+  caption(t,1.6,5,[{text:'Esto es lo que pasaría...',size:58,color:'#cfe3ff'}],1560);
+}
+
+function scene1(t){ // 5-14 energía
+  const sh=prog(t,11.5,14)*10;
+  const ox=Math.sin(t*61)*sh, oy=Math.cos(t*47)*sh;
+  bg(t,t*4);
+  drawEarth(540+ox,1060+oy,300,t*0.35,prog(t,11.8,14)*0.55,prog(t,12,14)*0.3);
+  caption(t,5,9.4,[{text:'Romper la Tierra no es fácil',size:74},{text:'su gravedad la mantiene unida',size:56,color:'#9fd0ff'}],380);
+  caption(t,9.4,14,[{text:'Haría falta',size:62},{text:'2 × 10³² julios',size:110,color:'#ffd84a'},{text:'Lo que emite el Sol en 1 semana',size:54,color:'#ffb36b'}],360);
+  // barra de energía
+  const k=easeInOut(prog(t,6,13));
+  const bx=140,by=1500,bw=800,bh=44;
+  ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.fillRect(bx,by,bw,bh);
+  const g=ctx.createLinearGradient(bx,0,bx+bw,0); g.addColorStop(0,'#ffd84a'); g.addColorStop(.6,'#ff8a1f'); g.addColorStop(1,'#ff2a1f');
+  ctx.fillStyle=g; ctx.fillRect(bx,by,bw*k,bh);
+  ctx.strokeStyle='rgba(255,255,255,0.6)'; ctx.lineWidth=3; ctx.strokeRect(bx,by,bw,bh);
+  label('ENERGÍA: '+Math.round(k*100)+'%',540,by+90,38,'#fff',win(t,5.5,14,0.4));
+}
+
+function scene2(t){ // 14-24 explosión
+  const T0=16;
+  const dt=t-T0;
+  const sh=dt<0?lerp(10,26,prog(t,14,T0)):Math.max(0,26*(1-dt/1.5));
+  const ox=Math.sin(t*61)*sh, oy=Math.cos(t*47)*sh;
+  bg(t,0);
+  const cx=540+ox, cy=1060+oy;
+  if(dt<0){
+    drawEarth(cx,cy,300,t*0.35,lerp(0.55,1,prog(t,14,T0)),lerp(0.3,0.9,prog(t,14,T0)));
+    const k=prog(t,15.3,T0);
+    glow(cx,cy,300*(0.3+k*1.3),[255,240,200],k*0.95);
+  } else {
+    ctx.save(); ctx.globalCompositeOperation='lighter';
+    // núcleo
+    glow(cx,cy,lerp(520,200,clamp(dt/6)),[255,150,60],Math.max(0.12,1-dt/3));
+    glow(cx,cy,lerp(260,60,clamp(dt/4)),[255,240,210],Math.max(0,1-dt/2));
+    // onda expansiva
+    const sr=1700*(1-Math.exp(-dt*1.4));
+    ctx.strokeStyle=`rgba(255,220,170,${Math.max(0,0.8-dt/2.2)})`; ctx.lineWidth=30*Math.max(0.1,1-dt/2);
+    ctx.beginPath(); ctx.arc(cx,cy,sr,0,TAU); ctx.stroke();
+    ctx.restore();
+    // fragmentos
+    for(const f of FRAGS){
+      const d=f.s*(1250*(1-Math.exp(-dt*0.85))+70*dt)+300*f.off*Math.min(1,dt*3)*0.2;
+      const x=cx+Math.cos(f.a)*d, y=cy+Math.sin(f.a)*d;
+      if(x<-50||x>W+50||y<-50||y>H+50) continue;
+      const temp=clamp(1-dt/f.cool);
+      const c=fragColor(temp);
+      if(temp>0.3){ctx.save();ctx.globalCompositeOperation='lighter';glow(x,y,f.sz*3,c,temp*0.5);ctx.restore();}
+      ctx.fillStyle=rgba(c,1); poly(x,y,f.sz,f.sides,f.sp*dt);
+    }
+    // destello
+    const fl=Math.max(0,1-dt/0.9);
+    if(fl>0){ctx.fillStyle=`rgba(255,250,235,${fl})`; ctx.fillRect(0,0,W,H);}
+  }
+  caption(t,14,15.9,[{text:'Pero imagina que ocurre...',size:72}],380);
+  caption(t,16.05,18.2,[{text:'¡BOOM!',size:190,color:'#ffd84a'}],420);
+  caption(t,18.2,21.1,[{text:'Toda la vida desaparece',size:76},{text:'en segundos',size:76,color:'#ff7a5a'}],360);
+  caption(t,21.1,24,[{text:'Los trozos salen disparados',size:70},{text:'a más de 40.000 km/h',size:88,color:'#ffd84a'}],360);
+}
+
+function scene3(t){ // 24-34 la luz
+  const u=t-24;
+  const lr=u*70;
+  const mars=planet(marsA(t),R_M);
+  const dm=Math.hypot(mars.x-EXP.x,mars.y-EXP.y);
+  const marsFlash=lr>=dm?Math.max(0,1-(lr-dm)/120):0;
+  const sunPulse=lr>=R_E-70?Math.max(0,1-(lr-(R_E-70))/160):0;
+  systemBase(t,{sunPulse,marsFlash,earthOrbit:0.25});
+  // nube de escombros diminuta
+  glow(EXP.x,EXP.y,40,[255,140,60],0.7);
+  for(let i=0;i<60;i++){const f=FRAGS[i]; ctx.fillStyle=rgba(fragColor(0.5),0.9); ctx.beginPath(); ctx.arc(EXP.x+Math.cos(f.a)*f.s*28,EXP.y+Math.sin(f.a)*f.s*28,1.6,0,TAU); ctx.fill();}
+  label('TIERRA',EXP.x,EXP.y-60,28,'rgba(150,200,255,0.9)');
+  // frente de luz
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  for(let k=0;k<3;k++){
+    ctx.strokeStyle=`rgba(255,255,230,${0.55-k*0.17})`; ctx.lineWidth=10-k*3;
+    ctx.beginPath(); ctx.arc(EXP.x,EXP.y,Math.max(1,lr-k*14),0,TAU); ctx.stroke();
+  }
+  ctx.restore();
+  // cronómetro (tiempo real simulado: 330 px = 8 min 20 s)
+  const secs=Math.round(lr/R_E*500);
+  const mm=String(Math.floor(secs/60)).padStart(2,'0'), ss=String(secs%60).padStart(2,'0');
+  ctx.save(); ctx.globalAlpha=win(t,24,34,0.4);
+  ctx.fillStyle='rgba(0,0,0,0.55)'; roundRect(390,1640,300,96,22); ctx.fill();
+  ctx.restore();
+  label(`${mm}:${ss}`,540,1690,62,'#fff',win(t,24,34,0.4));
+  caption(t,24,28.5,[{text:'El destello viaja a la',size:70},{text:'velocidad de la luz',size:84,color:'#fff3a8'}],360);
+  caption(t,28.5,31.4,[{text:'Llega al Sol en',size:70},{text:'8 min 20 s',size:100,color:'#ffd84a'}],360);
+  caption(t,31.4,34,[{text:'Y a Marte, en unos',size:70},{text:'16 minutos',size:100,color:'#ff9a72'}],360);
+}
+
+function roundRect(x,y,w,h,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
+
+function scene4(t){ // 34-43 la Luna
+  bg(t,t*2);
+  const cx=330, cy=1180;
+  const u=t-34;
+  // resplandor del Sol fuera de cuadro
+  glow(-200,600,700,[255,190,80],0.25);
+  // nube de escombros
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  glow(cx,cy,260,[255,120,50],0.55); glow(cx,cy,110,[255,220,170],0.6);
+  ctx.restore();
+  for(const f of FRAGS){
+    const d=f.s*(160+u*95)+f.off*40;
+    const x=cx+Math.cos(f.a)*d, y=cy+Math.sin(f.a)*d*0.9;
+    if(x<-30||x>W+30||y<-30||y>H+30) continue;
+    const temp=clamp(0.55-u*0.05-f.s*0.3);
+    ctx.fillStyle=rgba(fragColor(temp),1); poly(x,y,f.sz*0.75,f.sides,f.sp*t);
+  }
+  // Luna: se aleja al final
+  const k=easeInOut(prog(t,39.6,43));
+  const mx=lerp(790,960,k), my=lerp(720,420,k), mr=lerp(110,60,k);
+  if(k>0){ ctx.setLineDash([4,14]); ctx.strokeStyle='rgba(255,255,255,0.35)'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(790,720); ctx.lineTo(mx,my); ctx.stroke(); ctx.setLineDash([]); }
+  const extra=IMPACTS.filter(i=>t>=i.t).map(i=>({x:i.x,y:i.y,s:i.s}));
+  drawMoon(mx,my,mr,t,extra);
+  // destellos de impacto
+  ctx.save(); ctx.globalCompositeOperation='lighter';
+  for(const i of IMPACTS){const d=t-i.t; if(d>=0&&d<0.45) glow(mx+i.x*mr,my+i.y*mr,mr*(0.25+d),[255,200,120],1-d/0.45);}
+  ctx.restore();
+  label('LUNA',mx,my+mr+42,30,'rgba(255,255,255,0.85)');
+  caption(t,34,36.2,[{text:'¿Y la Luna?',size:110,color:'#e6e6ff'}],360);
+  caption(t,36.2,39.6,[{text:'Recibiría una lluvia',size:76},{text:'de escombros',size:92,color:'#ffb36b'}],1480);
+  caption(t,39.6,43,[{text:'Y seguiría girando',size:70},{text:'alrededor del Sol...',size:70},{text:'SOLA',size:120,color:'#9fd0ff'}],1420);
+}
+
+function scene5(t){ // 43-52 el anillo
+  const u=t-43;
+  systemBase(t,{earthOrbit:0.12});
+  const spread=lerp(0.05,Math.PI,easeInOut(prog(t,43.5,51.5)));
+  drawRing(t,spread,u*0.03);
+  // contador de años (log)
+  const k=prog(t,43.5,51.5);
+  const years=Math.pow(10,lerp(0,6,k));
+  let txt;
+  if(years<1000) txt='+ '+Math.round(years)+(Math.round(years)===1?' año':' años');
+  else if(years<1e6) txt='+ '+Math.round(years/1000)+'.000 años';
+  else txt='+ 1 millón de años';
+  ctx.save(); ctx.globalAlpha=win(t,43.2,52,0.4); ctx.fillStyle='rgba(0,0,0,0.55)'; roundRect(270,1640,540,96,22); ctx.fill(); ctx.restore();
+  label(txt,540,1690,54,'#ffd84a',win(t,43.2,52,0.4));
+  caption(t,43,47.5,[{text:'Los restos se reparten',size:74},{text:'por la órbita de la Tierra',size:62,color:'#cfe3ff'}],360);
+  caption(t,47.5,52,[{text:'Formando un',size:70},{text:'anillo de rocas',size:100,color:'#ffb36b'},{text:'alrededor del Sol',size:70}],340);
+}
+
+function scene6(t){ // 52-59 resto del sistema
+  const {v,m}=systemBase(t,{earthOrbit:0.1});
+  drawRing(t,Math.PI,(t-43)*0.03);
+  // meteoritos hacia Venus / Marte
+  for(const me of METEORS){
+    const d=t-me.t; if(d<0||d>0.9) continue;
+    const tg=me.tgt==='v'?v:m;
+    const sa=me.a; const sx=SUN.x+Math.cos(sa)*R_E, sy=SUN.y+Math.sin(sa)*R_E;
+    const k=easeOut(d/0.9); const x=lerp(sx,tg.x,k), y=lerp(sy,tg.y,k);
+    const tx=lerp(sx,tg.x,Math.max(0,k-0.25)), ty=lerp(sy,tg.y,Math.max(0,k-0.25));
+    const gr=ctx.createLinearGradient(tx,ty,x,y); gr.addColorStop(0,'rgba(255,160,60,0)'); gr.addColorStop(1,'rgba(255,230,180,0.95)');
+    ctx.strokeStyle=gr; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(tx,ty); ctx.lineTo(x,y); ctx.stroke();
+    if(d>0.75){ctx.save();ctx.globalCompositeOperation='lighter';glow(tg.x,tg.y,40,[255,200,120],(0.9-d)/0.15);ctx.restore();}
+  }
+  caption(t,52,54.4,[{text:'¿Y los demás planetas?',size:84}],360);
+  caption(t,54.4,59,[{text:'Casi nada cambia',size:84,color:'#9fffb0'},{text:'La Tierra es solo el 0,0003% de la masa del Sol',size:54,color:'#ffffff'}],340);
+  caption(t,55.5,59,[{text:'(solo alguna lluvia de meteoritos extra)',size:44,color:'#ffcf9e'}],560);
+}
+
+function scene7(t){ // 59-66 final
+  systemBase(t,{earthOrbit:0.1});
+  drawRing(t,Math.PI,(t-43)*0.03);
+  // fantasma de la Tierra
+  const ga=win(t,59.3,66,0.8)*0.8;
+  ctx.save(); ctx.globalAlpha=ga; ctx.setLineDash([8,10]); ctx.strokeStyle='#8fc6ff'; ctx.lineWidth=4;
+  ctx.beginPath(); ctx.arc(EXP.x,EXP.y,46,0,TAU); ctx.stroke(); ctx.restore();
+  label('AQUÍ ESTABA TU CASA',EXP.x,EXP.y-84,32,'#8fc6ff',ga);
+  caption(t,59,62.5,[{text:'Un nuevo',size:72},{text:'cinturón de asteroides',size:88,color:'#ffd84a'},{text:'donde antes estaba nuestro hogar',size:52,color:'#cfe3ff'}],330);
+  caption(t,62.5,66,[{text:'Tranquilo: nada cerca',size:66},{text:'tiene tanta energía',size:66},{text:'Sígueme para más ¿Y SI...?',size:66,color:'#ffd84a',gap:0}],330);
+}
+
+// ============================================================
+function renderAt(t){
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.globalAlpha=1; ctx.globalCompositeOperation='source-over';
+  if(t<5) scene0(t);
+  else if(t<14) scene1(t);
+  else if(t<24) scene2(t);
+  else if(t<34) scene3(t);
+  else if(t<43) scene4(t);
+  else if(t<52) scene5(t);
+  else if(t<59) scene6(t);
+  else scene7(t);
+  // fundidos a negro entre cambios de plano
+  let fade=0;
+  for(const c of [24,34,43]) fade=Math.max(fade,1-Math.abs(t-c)/0.35);
+  fade=Math.max(fade,1-t/0.4,1-(DUR-t)/0.6);
+  if(fade>0){ctx.fillStyle=`rgba(0,0,0,${clamp(fade)})`; ctx.fillRect(0,0,W,H);}
+  // barra de progreso
+  ctx.fillStyle='rgba(255,216,74,0.85)'; ctx.fillRect(0,0,W*t/DUR,8);
+}
+window.renderAt=renderAt; window.DUR=DUR;
+
+// reproducción en el navegador
+if(!location.search.includes('render')){
+  let start=performance.now();
+  cv.addEventListener('click',()=>start=performance.now());
+  (function loop(now){ renderAt(((now-start)/1000)%DUR); requestAnimationFrame(loop); })(start);
+} else document.body.classList.add('render');
+</script>
+</body>
+</html>
