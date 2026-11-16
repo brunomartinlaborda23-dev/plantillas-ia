@@ -424,13 +424,26 @@ function renderStrips() {
 const video = $('#video');
 let stream = null, track = null, facing = 'environment', torchOn = false, camWanted = false;
 
+// Si el navegador no deja usar la cámara dentro de la página (archivo abierto en el móvil, página sin https,
+// navegador de otra app…), el botón abre directamente la cámara del móvil.
+let camMode = window.isSecureContext && navigator.mediaDevices?.getUserMedia ? 'live' : 'native';
+
+function setNativeMode() {
+  camMode = 'native';
+  camWanted = false;
+  $('#camMsg').textContent = 'Haz la foto con la cámara de tu móvil: al hacerla, vuelve aquí automáticamente.';
+  $('#startCam').textContent = state.photos.length ? '📷 Hacer otra foto' : '📷 Abrir cámara';
+  $('#camHint').textContent = 'Puedes repetirlo las veces que quieras';
+}
+
+function openCamera() {
+  if (camMode === 'native') $('#nativeCam').click();
+  else startCamera();
+}
+
 async function startCamera() {
   stopCamera();
   camWanted = true;
-  if (!navigator.mediaDevices?.getUserMedia) {
-    toast('Este navegador no deja usar la cámara aquí. Usa "Cámara del móvil".');
-    return;
-  }
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: facing }, width: { ideal: 2560 }, height: { ideal: 1920 } },
@@ -438,8 +451,9 @@ async function startCamera() {
     });
   } catch (e) {
     console.error(e);
-    camWanted = false;
-    toast('No se pudo abrir la cámara. Da permiso o usa "Cámara del móvil".');
+    setNativeMode();
+    // abre la cámara del móvil directamente (si el navegador lo permite sin otro toque)
+    try { $('#nativeCam').click(); } catch {}
     return;
   }
   video.srcObject = stream;
@@ -680,7 +694,8 @@ $$('.step').forEach((b) => (b.onclick = () => go(b.dataset.step)));
 $('#toEdit').onclick = () => go('mejorar');
 $('#toPublish').onclick = () => go('publicar');
 
-$('#startCam').onclick = startCamera;
+$('#startCam').onclick = openCamera;
+if (camMode === 'native') setNativeMode();
 $('#shutter').onclick = capture;
 $('#flip').onclick = () => { facing = facing === 'environment' ? 'user' : 'environment'; startCamera(); };
 $('#torch').onclick = async () => {
@@ -694,6 +709,7 @@ for (const id of ['#nativeCam', '#gallery']) {
   $(id).onchange = async (e) => {
     for (const f of e.target.files) await addPhoto(f);
     e.target.value = '';
+    if (camMode === 'native') setNativeMode();
   };
 }
 
