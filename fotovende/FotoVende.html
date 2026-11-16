@@ -178,6 +178,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
   display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel2);
   border-radius: 999px; padding: 8px 12px; cursor: pointer; min-height: 40px;
 }
+.chips button:disabled { opacity: .35; cursor: default; }
 .chips button.on { border-color: var(--accent); background: rgba(47,211,168,.14); color: #bff5e6; }
 .chips i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(255,255,255,.3); display: inline-block; }
 .chips i.blurdot { background: radial-gradient(#9ab, #456); filter: blur(1px); }
@@ -345,7 +346,7 @@ select, .form input {
     <!-- ============ 3. PUBLICAR ============ -->
     <section id="publicar" class="panel">
       <h2>Tus fotos están listas</h2>
-      <p class="muted">Ordénalas con las flechas: la primera es la portada.</p>
+      <p class="muted" id="finalsHint">Ordénalas con las flechas: la primera es la portada.</p>
       <div class="finals" id="finals"></div>
 
       <div class="row">
@@ -6082,6 +6083,9 @@ const DEFAULTS = {
   bg: 'original', bgColor: '#f3dfd4', shadow: true, format: '3:4', rotate: 0,
 };
 
+// En la versión con enlace (claude.ai) no hay cámara en vivo, ni IA de fondo, y las fotos se guardan con su botón.
+const IN_ARTIFACT = !!window.FV_ARTIFACT;
+
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const state = { photos: [], sel: null, step: 'capturar', showOriginal: false };
@@ -6553,7 +6557,7 @@ let stream = null, track = null, facing = 'environment', torchOn = false, camWan
 
 // Si el navegador no deja usar la cámara dentro de la página (archivo abierto en el móvil, página sin https,
 // navegador de otra app…), el botón abre directamente la cámara del móvil.
-let camMode = window.isSecureContext && navigator.mediaDevices?.getUserMedia ? 'live' : 'native';
+let camMode = !IN_ARTIFACT && window.isSecureContext && navigator.mediaDevices?.getUserMedia ? 'live' : 'native';
 
 function setNativeMode() {
   camMode = 'native';
@@ -6730,7 +6734,21 @@ async function readyFiles() {
   return state.photos.filter((p) => p.out).map((p, i) => new File([p.out.blob], `foto-${i + 1}.jpg`, { type: 'image/jpeg' }));
 }
 
-function downloadOne(p, i) {
+let savesApi;
+const getSaves = () => (savesApi ||= window.claude?.use ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null));
+
+async function downloadOne(p, i) {
+  if (IN_ARTIFACT) {
+    const dl = await getSaves();
+    if (!dl) { toast('Mantén el dedo sobre la foto y elige "Guardar imagen".'); return false; }
+    try {
+      await dl.save({ filename: `foto-${i + 1}.jpg`, data: p.out.blob });
+      return true;
+    } catch (e) {
+      if (e?.code !== 'declined') toast('No se pudo guardar. Mantén el dedo sobre la foto y elige "Guardar imagen".');
+      return false;
+    }
+  }
   const a = document.createElement('a');
   a.href = p.out.url;
   a.download = `foto-${i + 1}.jpg`;
@@ -6741,11 +6759,18 @@ function downloadOne(p, i) {
 
 async function downloadAll() {
   await readyFiles();
+  let n = 0;
   for (const [i, p] of state.photos.entries()) {
-    downloadOne(p, i);
-    await sleep(350);
+    if (IN_ARTIFACT) {
+      if (await downloadOne(p, i)) n++;
+      else if (i === 0) return;
+    } else {
+      downloadOne(p, i);
+      n++;
+      await sleep(350);
+    }
   }
-  toast('Fotos descargadas');
+  if (n) toast(n === 1 ? 'Foto guardada' : `${n} fotos guardadas`);
 }
 
 async function shareAll() {
@@ -6896,8 +6921,17 @@ $$('[data-copy]').forEach((b) => (b.onclick = async () => {
   } catch { toast('No se pudo copiar'); }
 }));
 
+let newItemArmed = null;
 $('#newItem').onclick = () => {
-  if (!confirm('¿Empezar otro artículo? Se quitarán las fotos actuales.')) return;
+  const btn = $('#newItem');
+  if (state.photos.length && !newItemArmed) {
+    btn.textContent = '¿Seguro? Toca otra vez para borrar estas fotos';
+    newItemArmed = setTimeout(() => { newItemArmed = null; btn.textContent = '＋ Empezar otro artículo'; }, 4000);
+    return;
+  }
+  clearTimeout(newItemArmed);
+  newItemArmed = null;
+  btn.textContent = '＋ Empezar otro artículo';
   state.photos.forEach((p) => p.out && URL.revokeObjectURL(p.out.url));
   state.photos = [];
   state.sel = null;
@@ -6910,6 +6944,16 @@ $('#newItem').onclick = () => {
 window.addEventListener('beforeunload', (e) => {
   if (state.photos.length) e.preventDefault();
 });
+
+if (IN_ARTIFACT) {
+  $$('#bgChips button').forEach((b) => { if (b.dataset.bg !== 'original') b.disabled = true; });
+  $('#bgHint').textContent = 'Cambiar el fondo con IA solo funciona en la versión instalada en el móvil';
+  $('#share').hidden = true;
+  $('#download').classList.add('primary');
+  $('#download').textContent = '⬇️ Guardar fotos';
+  $('#finalsHint').textContent = 'Ordénalas con las flechas: la primera es la portada. Toca una foto para guardarla.';
+  $$('.howto li')[0].innerHTML = 'Pulsa <b>Guardar fotos</b> y acepta cada una (o mantén el dedo sobre una foto → <i>Guardar imagen</i>).';
+}
 
 // Para pruebas automáticas
 window.__fotovende = { state, addPhoto, render, go };

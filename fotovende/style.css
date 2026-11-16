@@ -166,6 +166,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); height: 28px; }
   display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--panel2);
   border-radius: 999px; padding: 8px 12px; cursor: pointer; min-height: 40px;
 }
+.chips button:disabled { opacity: .35; cursor: default; }
 .chips button.on { border-color: var(--accent); background: rgba(47,211,168,.14); color: #bff5e6; }
 .chips i { width: 16px; height: 16px; border-radius: 50%; border: 1px solid rgba(255,255,255,.3); display: inline-block; }
 .chips i.blurdot { background: radial-gradient(#9ab, #456); filter: blur(1px); }
