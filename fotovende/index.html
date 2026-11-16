@@ -69,6 +69,16 @@
 
     <!-- ============ 2. MEJORAR ============ -->
     <section id="mejorar" class="panel">
+      <div class="group platform-pick">
+        <div class="group-head"><h3>🛍️ ¿Dónde lo vas a vender?</h3><small>Pone el fondo y formato que mejor funcionan</small></div>
+        <div class="chips" id="platformChips">
+          <button data-platform="vinted">Vinted</button>
+          <button data-platform="wallapop">Wallapop</button>
+          <button data-platform="depop">Depop</button>
+          <button data-platform="ebay">eBay</button>
+        </div>
+        <p class="tip" id="platformTip"></p>
+      </div>
       <div class="editor">
         <div class="preview-wrap">
           <canvas id="preview"></canvas>
@@ -81,7 +91,7 @@
           <div class="group">
             <div class="group-head">
               <h3>✨ Calidad</h3>
-              <label class="switch"><input type="checkbox" id="auto" checked><span>Auto-mejora</span></label>
+              <label class="switch"><input type="checkbox" id="auto" checked><span>Luz y color automáticos</span></label>
             </div>
             <label class="slider">Brillo <input type="range" min="-100" max="100" value="0" data-k="brightness"></label>
             <label class="slider">Contraste <input type="range" min="-100" max="100" value="0" data-k="contrast"></label>
@@ -141,11 +151,12 @@
       </div>
 
       <div class="group">
-        <h3>🛍️ Súbelas a tu tienda</h3>
+        <h3>🛍️ Los 4 sitios donde más se vende ropa</h3>
+        <p class="muted small">Qué fondo y qué descripción funcionan en cada uno. Pulsa "Preparar" y las fotos y el texto se adaptan.</p>
         <ol class="howto">
-          <li>Pulsa <b>Guardar / compartir</b> y elige <i>Guardar imágenes</i> (o compártelas directamente con la app).</li>
-          <li>Abre la app donde vendes y crea el anuncio.</li>
-          <li>Elige las fotos de tu galería — ya están en el orden y formato correctos.</li>
+          <li>Pulsa <b>Guardar / compartir</b> y guarda las fotos en el móvil.</li>
+          <li>Pulsa <b>Abrir</b> en el sitio que quieras y crea el anuncio.</li>
+          <li>Elige las fotos de tu galería y pega el título y la descripción de abajo.</li>
         </ol>
         <div class="row tight">
           <label class="color">País de Vinted:
@@ -156,16 +167,12 @@
             </select>
           </label>
         </div>
-        <div class="stores">
-          <a class="store" id="goVinted" target="_blank" rel="noopener">Vinted<small>Subir artículo</small></a>
-          <a class="store" href="https://es.wallapop.com/app/catalog/upload" target="_blank" rel="noopener">Wallapop<small>Subir producto</small></a>
-          <a class="store" href="https://www.ebay.es/sl/sell" target="_blank" rel="noopener">eBay<small>Vender</small></a>
-          <a class="store" href="https://www.milanuncios.com/publicar-anuncios-gratis/" target="_blank" rel="noopener">Milanuncios<small>Publicar</small></a>
-        </div>
+        <div class="sites" id="sites"></div>
+        <a id="goVinted" hidden></a>
       </div>
 
-      <details class="group desc">
-        <summary><h3>📝 Ayuda con el título y la descripción</h3></summary>
+      <details class="group desc" open>
+        <summary><h3>📝 Título y descripción para <span id="descFor">Vinted</span></h3></summary>
         <div class="form">
           <label>Qué es <input id="dQue" placeholder="Chaqueta vaquera"></label>
           <label>Marca <input id="dMarca" placeholder="Levi's"></label>

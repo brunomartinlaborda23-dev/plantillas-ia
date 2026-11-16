@@ -178,8 +178,8 @@ function getStats(p, useCut) {
   for (let c = 0; c < 3; c++) {
     // mezcla de estiramiento global y por canal: quita dominantes sin inventar colores
     // (con límite para no teñir la foto)
-    lo[c] = Math.min(70, LLo + Math.min(18, (lo[c] - LLo) * 0.4));
-    hi[c] = Math.max(160, LHi - Math.min(18, (LHi - hi[c]) * 0.4));
+    lo[c] = Math.min(25, LLo + Math.min(14, (lo[c] - LLo) * 0.4));
+    hi[c] = Math.max(210, LHi - Math.min(14, (LHi - hi[c]) * 0.4));
     if (hi[c] - lo[c] < 40) { lo[c] = 0; hi[c] = 255; }
   }
   // luminosidad media tras estirar → gamma suave hacia un punto medio agradable
@@ -198,6 +198,24 @@ function getStats(p, useCut) {
   return (p.stats[key] = { lo, hi, gamma });
 }
 
+// Balance de blancos: busca zonas casi grises/blancas de la foto (pared, suelo, etiqueta) y quita el tono.
+function getWB(p) {
+  if (p.wb) return p.wb;
+  const small = scaled(p.src, 200);
+  const d = ctx2d(small).getImageData(0, 0, small.width, small.height).data;
+  let r = 0, g = 0, b = 0, n = 0, all = 0;
+  for (let i = 0; i < d.length; i += 4) {
+    all++;
+    const mx = Math.max(d[i], d[i + 1], d[i + 2]), mn = Math.min(d[i], d[i + 1], d[i + 2]);
+    if (mx < 60 || mx > 250 || mx - mn > 45) continue;
+    r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+  }
+  if (n < all * 0.03) return (p.wb = [1, 1, 1]);
+  const gray = (r + g + b) / 3;
+  const k = (v) => Math.min(1.2, Math.max(0.85, gray / v));
+  return (p.wb = [k(r), k(g), k(b)]);
+}
+
 function buildLUTs(s, st) {
   const luts = [new Uint8ClampedArray(256), new Uint8ClampedArray(256), new Uint8ClampedArray(256)];
   const b = s.brightness / 100;
@@ -210,6 +228,7 @@ function buildLUTs(s, st) {
       if (s.auto && st) {
         x = Math.min(1, Math.max(0, (v - st.lo[c]) / (st.hi[c] - st.lo[c])));
         x = Math.pow(x, st.gamma);
+        if (st.wb) x *= st.wb[c];
       }
       if (b > 0) x = 1 - Math.pow(1 - x, 1 + b * 1.5);
       else if (b < 0) x = Math.pow(x, 1 - b * 1.5);
@@ -314,7 +333,8 @@ function render(p, size, original = false) {
   const s = original ? { ...DEFAULTS, format: p.s.format, rotate: p.s.rotate, auto: false, sharpness: 0 } : p.s;
   const useCut = !original && s.bg !== 'original' && !!p.cutout;
   const src = source(p, useCut, size);
-  const subj = original ? copyCanvas(src) : adjust(src, s, getStats(p, useCut));
+  const st = original ? null : getStats(p, false);
+  const subj = original ? copyCanvas(src) : adjust(src, s, st && { ...st, wb: getWB(p) });
   const ratio = FORMATS[s.format];
   let out;
   if (!useCut) {
@@ -350,6 +370,111 @@ function render(p, size, original = false) {
 /* ===================== quitar fondo (IA en el navegador) ===================== */
 
 let bgModule = null;
+
+// Versión enlace: la IA (modelo + motor) se publica junto a la página, en la carpeta ia/.
+let iaSession = null;
+function getIa(onProgress) {
+  iaSession ||= (async () => {
+    const base = new URL('ia/', document.baseURI).href;
+    const ort = await import(base + 'ort.wasm.min.mjs');
+    ort.env.wasm.wasmPaths = base;
+    ort.env.wasm.numThreads = 1;
+    const info = await (await fetch(base + 'modelo.json')).json();
+    const buf = new Uint8Array(info.size);
+    let off = 0;
+    for (const name of info.chunks) {
+      const r = await fetch(base + name);
+      if (!r.ok) throw new Error('modelo ' + r.status);
+      const part = new Uint8Array(await r.arrayBuffer());
+      buf.set(part, off);
+      off += part.length;
+      onProgress(off / info.size);
+    }
+    const session = await ort.InferenceSession.create(buf, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
+    return { ort, session };
+  })();
+  iaSession.catch(() => (iaSession = null));
+  return iaSession;
+}
+
+// Se queda solo con la prenda (las zonas grandes) y descarta manchitas sueltas del fondo.
+function mainBlobs(m, R) {
+  const S = R / 4, bin = new Uint8Array(S * S), lab = new Int32Array(S * S);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    let v = 0;
+    for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 4; dx++) v = Math.max(v, m[(y * 4 + dy) * R + x * 4 + dx]);
+    bin[y * S + x] = v > 0.5 ? 1 : 0;
+  }
+  const sizes = [0];
+  const stack = [];
+  for (let i = 0; i < S * S; i++) {
+    if (!bin[i] || lab[i]) continue;
+    const id = sizes.length;
+    let size = 0;
+    stack.push(i);
+    lab[i] = id;
+    while (stack.length) {
+      const q = stack.pop();
+      size++;
+      const x = q % S, y = (q / S) | 0;
+      for (const [nx, ny] of [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]]) {
+        if (nx < 0 || ny < 0 || nx >= S || ny >= S) continue;
+        const r = ny * S + nx;
+        if (bin[r] && !lab[r]) { lab[r] = id; stack.push(r); }
+      }
+    }
+    sizes.push(size);
+  }
+  const big = Math.max(...sizes);
+  const keep = new Uint8Array(S * S);
+  // dilata un poco lo que se queda para no cortar los bordes suaves
+  for (let i = 0; i < S * S; i++) {
+    if (!lab[i] || sizes[lab[i]] < big * 0.08) continue;
+    const x = i % S, y = (i / S) | 0;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (nx >= 0 && ny >= 0 && nx < S && ny < S) keep[ny * S + nx] = 1;
+    }
+  }
+  if (big === 0) keep.fill(1);
+  return keep;
+}
+
+async function cutoutLocal(src, onProgress) {
+  const { ort, session } = await getIa(onProgress);
+  bgStatus = 'Recortando la prenda…';
+  updateBusy();
+  await nextFrame();
+  const R = 1024;
+  const c = makeCanvas(R, R);
+  drawSmooth(ctx2d(c), src, 0, 0, R, R);
+  const d = ctx2d(c).getImageData(0, 0, R, R).data;
+  const n = R * R;
+  const f = new Float32Array(3 * n);
+  for (let i = 0, j = 0; j < n; i += 4, j++) {
+    f[j] = (d[i] - 128) / 256;
+    f[j + n] = (d[i + 1] - 128) / 256;
+    f[j + 2 * n] = (d[i + 2] - 128) / 256;
+  }
+  const out = await session.run({ [session.inputNames[0]]: new ort.Tensor('float32', f, [1, 3, R, R]) });
+  const m = out[session.outputNames[0]].data;
+  const mask = makeCanvas(R, R);
+  const mx = ctx2d(mask);
+  const md = mx.createImageData(R, R);
+  const keep = mainBlobs(m, R);
+  for (let j = 0; j < n; j++) {
+    // curva suave: quita restos débiles del fondo y deja bordes limpios
+    const t = Math.min(1, Math.max(0, (m[j] - 0.25) / 0.5));
+    const k = keep[((j / R / 4) | 0) * (R / 4) + (((j % R) / 4) | 0)];
+    md.data[j * 4 + 3] = k ? t * t * (3 - 2 * t) * 255 : 0;
+  }
+  mx.putImageData(md, 0, 0);
+  const cut = copyCanvas(src);
+  const cx = ctx2d(cut);
+  cx.globalCompositeOperation = 'destination-in';
+  drawSmooth(cx, mask, 0, 0, cut.width, cut.height);
+  return cut;
+}
 let cutQueue = Promise.resolve();
 let bgStatus = '';
 
@@ -361,6 +486,17 @@ function ensureCutout(p) {
   p.cutJob = cutQueue = cutQueue.then(async () => {
     try {
       if (!state.photos.includes(p)) return;
+      if (IN_ARTIFACT) {
+        bgStatus = 'Preparando la IA de recorte…';
+        updateBusy();
+        p.cutout = await cutoutLocal(p.src, (f) => {
+          bgStatus = `Preparando la IA de recorte (solo la 1ª vez)… ${Math.round(f * 100)}%`;
+          updateBusy();
+        });
+        p.cache?.clear();
+        if (p.stats) p.stats.c = undefined;
+        return;
+      }
       bgModule ||= import('./vendor/background-removal.mjs');
       const { removeBackground } = await bgModule;
       bgStatus = 'Recortando la prenda…';
@@ -716,23 +852,128 @@ async function shareAll() {
   }
 }
 
+/* ===================== sitios de venta ===================== */
+
+const PLATFORMS = {
+  vinted: {
+    name: 'Vinted', format: '3:4', bg: 'white',
+    url: () => `https://www.vinted.${country.value}/items/new`,
+    why: 'La app nº 1 para ropa de segunda mano en España y Europa. Sin comisión para quien vende.',
+    fondo: 'Fondo blanco o claro y liso, en vertical 3:4 (como se ve en la app).',
+    tips: ['Portada: la prenda entera de frente, centrada.', 'Después: detrás, etiqueta, talla, detalles y defectos.', 'Título con lo que la gente busca: tipo + marca + talla.'],
+    desc: 'Lista clara: marca, talla, estado, medidas y defectos.',
+  },
+  wallapop: {
+    name: 'Wallapop', format: '1:1', bg: 'white',
+    url: () => 'https://es.wallapop.com/app/catalog/upload',
+    why: 'Muy usada en España; vende rápido en tu zona y con envío.',
+    fondo: 'Fondo blanco, foto cuadrada para que se vea entera en el listado.',
+    tips: ['Título corto: tipo + marca + talla.', 'Di si envías o entregas en mano y en qué zona.', 'Pon el precio un poco alto para dejar margen a ofertas.'],
+    desc: 'Corta y directa, con forma de entrega.',
+  },
+  depop: {
+    name: 'Depop', format: '1:1', bg: 'color',
+    url: () => 'https://www.depop.com/products/create/',
+    why: 'La favorita para vintage, streetwear y estilo Y2K; público joven.',
+    fondo: 'Cuadrada con fondo de color suave o foto puesta: aquí se vende el estilo.',
+    tips: ['Primera foto con estilo: puesta o con un fondo de color.', 'Usa hasta 5 hashtags (#vintage #y2k…).', 'Indica cómo queda: oversize, ajustada, largo…'],
+    desc: 'Con estilo y hashtags al final.',
+  },
+  ebay: {
+    name: 'eBay', format: '1:1', bg: 'white',
+    url: () => 'https://www.ebay.es/sl/sell',
+    why: 'Llega a compradores de toda Europa; bueno para marcas y piezas de valor.',
+    fondo: 'Fondo blanco liso (lo que recomienda eBay) y foto grande y nítida.',
+    tips: ['Título de hasta 80 caracteres con marca, tipo, talla, color y estado.', 'Rellena las "características del artículo".', 'Pon medidas exactas: evitan devoluciones.'],
+    desc: 'Detallada y ordenada, con medidas.',
+  },
+};
+let platform = 'vinted';
+try { if (PLATFORMS[localStorage.getItem('fv-platform')]) platform = localStorage.getItem('fv-platform'); } catch {}
+
+function renderPlatforms() {
+  const P = PLATFORMS[platform];
+  $$('[data-platform]').forEach((b) => b.classList.toggle('on', b.dataset.platform === platform));
+  $('#platformTip').innerHTML = `<b>${P.name}:</b> ${P.fondo}`;
+  const box = $('#sites');
+  box.innerHTML = '';
+  for (const [key, Q] of Object.entries(PLATFORMS)) {
+    const el = document.createElement('article');
+    el.className = 'site' + (key === platform ? ' on' : '');
+    el.innerHTML = `<div class="site-head"><h4>${Q.name}</h4>${key === platform ? '<span class="pill">Elegido</span>' : ''}</div>
+      <p class="why">${Q.why}</p>
+      <dl><dt>Fondo y foto</dt><dd>${Q.fondo}</dd><dt>Descripción</dt><dd>${Q.desc}</dd></dl>
+      <ul>${Q.tips.map((t) => `<li>${t}</li>`).join('')}</ul>
+      <div class="site-actions"><button class="btn" data-use="${key}">${key === platform ? '✓ Fotos y texto preparados' : 'Preparar para ' + Q.name}</button>
+      <a class="btn primary" href="${Q.url()}" target="_blank" rel="noopener">Abrir ${Q.name} ↗</a></div>`;
+    el.querySelector('[data-use]').onclick = () => choosePlatform(key, true);
+    box.append(el);
+  }
+  buildText();
+}
+
+function choosePlatform(key, apply) {
+  platform = key;
+  try { localStorage.setItem('fv-platform', key); } catch {}
+  if (apply && state.photos.length) {
+    const P = PLATFORMS[key];
+    for (const p of state.photos) {
+      p.s.format = P.format;
+      p.s.bg = P.bg;
+      if (P.bg === 'color') p.s.bgColor = '#f3dfd4';
+      p.out = null;
+      ensureCutout(p);
+    }
+    toast(`Fotos preparadas para ${P.name}`);
+    syncControls();
+    schedulePreview();
+    if (state.step === 'publicar') buildFinals();
+  }
+  renderPlatforms();
+}
+
 /* ===================== descripción ===================== */
 
 function buildText() {
   const v = (id) => $(id).value.trim();
   const que = v('#dQue'), marca = v('#dMarca'), talla = v('#dTalla'), color = v('#dColor');
   const estado = v('#dEstado'), medidas = v('#dMedidas'), notas = v('#dNotas');
-  const title = [que, marca, talla && `talla ${talla}`, color.toLowerCase()].filter(Boolean).join(' ');
-  const lines = [];
-  const head = [que, marca && `de ${marca}`].filter(Boolean).join(' ');
-  if (head || talla) lines.push(`${head || 'Prenda'}${talla ? `, talla ${talla}` : ''}.`);
-  if (color) lines.push(`🎨 Color: ${color}`);
-  lines.push(`✅ Estado: ${estado}`);
-  if (medidas) lines.push(`📏 Medidas: ${medidas}`);
-  if (notas) lines.push(`ℹ️ ${notas}`);
-  lines.push('', '📦 Envío rápido y bien empaquetado.', '💬 Pregúntame cualquier duda, ¡acepto ofertas razonables!');
+  const head = [que, marca && `de ${marca}`].filter(Boolean).join(' ') || 'Prenda';
+  const tag = (t) => '#' + t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+  let title, lines;
+  if (platform === 'ebay') {
+    title = [marca, que, talla && `Talla ${talla}`, color, estado].filter(Boolean).join(' ').slice(0, 80);
+    lines = [`${head}${talla ? ` – talla ${talla}` : ''}`, '', 'CARACTERÍSTICAS', `• Marca: ${marca || '—'}`, `• Talla: ${talla || '—'}`,
+      `• Color: ${color || '—'}`, `• Estado: ${estado}`];
+    if (medidas) lines.push(`• Medidas: ${medidas}`);
+    if (notas) lines.push('', 'DETALLES', notas);
+    lines.push('', 'ENVÍO', 'Envío en 24-48 h, bien empaquetado. Consulta cualquier duda antes de comprar.');
+  } else if (platform === 'depop') {
+    title = [marca, que, talla && `talla ${talla}`].filter(Boolean).join(' ');
+    lines = [`✨ ${head}${color ? `, ${color.toLowerCase()}` : ''}${talla ? ` · talla ${talla}` : ''}`, `Estado: ${estado.toLowerCase()}`];
+    if (medidas) lines.push(`📏 ${medidas}`);
+    if (notas) lines.push(notas);
+    lines.push('', 'Envío rápido 📦 ¡Pregunta lo que quieras!', '');
+    const tags = [marca, que.split(' ')[0], color, 'vintage', 'secondhand'].filter(Boolean).map(tag).filter((t) => t.length > 1);
+    lines.push([...new Set(tags)].slice(0, 5).join(' '));
+  } else if (platform === 'wallapop') {
+    title = [que, marca, talla && `T.${talla}`].filter(Boolean).join(' ');
+    lines = [`${head}${talla ? `, talla ${talla}` : ''}${color ? `, color ${color.toLowerCase()}` : ''}. Estado: ${estado.toLowerCase()}.`];
+    if (medidas) lines.push(`Medidas: ${medidas}.`);
+    if (notas) lines.push(notas);
+    lines.push('', 'Hago envíos 📦 y también entrego en mano. ¡Escríbeme sin compromiso!');
+  } else {
+    title = [que, marca, talla && `talla ${talla}`, color.toLowerCase()].filter(Boolean).join(' ');
+    lines = [`${head}${talla ? `, talla ${talla}` : ''}.`];
+    if (color) lines.push(`🎨 Color: ${color}`);
+    lines.push(`✅ Estado: ${estado}`);
+    if (medidas) lines.push(`📏 Medidas: ${medidas}`);
+    if (notas) lines.push(`ℹ️ ${notas}`);
+    lines.push('', '📦 Envío rápido y bien empaquetado.', '💬 Pregúntame cualquier duda, ¡acepto ofertas razonables!');
+  }
   $('#outTitle').value = title || '—';
   $('#outDesc').value = lines.join('\n');
+  $('#descFor').textContent = PLATFORMS[platform].name;
 }
 
 /* ===================== navegación ===================== */
@@ -828,6 +1069,8 @@ for (const el of [cmp, $('#preview')]) {
   el.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
+$$('#platformChips [data-platform]').forEach((b) => (b.onclick = () => choosePlatform(b.dataset.platform, true)));
+
 $('#share').onclick = shareAll;
 $('#download').onclick = downloadAll;
 
@@ -837,7 +1080,7 @@ const updateVinted = () => {
   $('#goVinted').href = `https://www.vinted.${country.value}/items/new`;
   try { localStorage.setItem('fv-country', country.value); } catch {}
 };
-country.onchange = updateVinted;
+country.onchange = () => { updateVinted(); renderPlatforms(); };
 updateVinted();
 
 $$('.form input, .form select').forEach((el) => (el.oninput = buildText));
@@ -873,14 +1116,15 @@ window.addEventListener('beforeunload', (e) => {
   if (state.photos.length) e.preventDefault();
 });
 
+renderPlatforms();
+
 if (IN_ARTIFACT) {
-  $$('#bgChips button').forEach((b) => { if (b.dataset.bg !== 'original') b.disabled = true; });
-  $('#bgHint').textContent = 'Cambiar el fondo con IA solo funciona en la versión instalada en el móvil';
+  $('#bgHint').textContent = 'La IA recorta la prenda (la 1ª vez carga ~57 MB, mejor con wifi)';
   $('#share').hidden = true;
   $('#download').classList.add('primary');
   $('#download').textContent = '⬇️ Guardar fotos';
   $('#finalsHint').textContent = 'Ordénalas con las flechas: la primera es la portada. Toca una foto para guardarla.';
-  $$('.howto li')[0].innerHTML = 'Pulsa <b>Guardar fotos</b> y acepta cada una (o mantén el dedo sobre una foto → <i>Guardar imagen</i>).';
+  if ($$('.howto li')[0]) $$('.howto li')[0].innerHTML = 'Pulsa <b>Guardar fotos</b> y acepta cada una (o mantén el dedo sobre una foto → <i>Guardar imagen</i>).';
 }
 
 // Para pruebas automáticas

@@ -48,3 +48,11 @@ el enlace en el móvil y pulsar "Añadir a pantalla de inicio" para tenerla como
   1.7.0 empaquetada (licencia AGPL, ver `vendor/LICENSE-background-removal.md`; bien para uso personal). El modelo y
   los archivos wasm se descargan de `staticimgly.com` la primera vez.
 - `vendor/heic2any.mjs` — [heic2any](https://github.com/alexcorvi/heic2any) (MIT) para abrir fotos HEIC de iPhone/Samsung.
+
+## Versión con enlace (claude.ai)
+
+`FotoVende-enlace.html` es la misma app preparada para publicarse como página en claude.ai. Allí no se puede descargar
+nada de otros servidores, así que la IA de recorte se publica junto a la página en la carpeta `ia/`:
+`ort.wasm.min.mjs`, `ort-wasm-simd-threaded.mjs/.wasm` (de `onnxruntime-web@1.21.0`) y el modelo `isnet_quint8`
+de `@imgly/background-removal-data@1.4.5` partido en trozos `modelo-XX.wasm` + `modelo.json`. Esos archivos (~57 MB)
+no se guardan en el repositorio.

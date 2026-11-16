@@ -32,6 +32,7 @@ console.log('FotoVende.html', (html.length / 1024).toFixed(0), 'KB');
     'Promise.resolve({ default: window.heic2anyLib.default })',
   );
   const body = r('./index.html').split('<body>')[1].split('</body>')[0]
+    .replaceAll('icon.svg', icon)
     .replace('<script type="module" src="app.js"></script>', () =>
       `<script>window.FV_ARTIFACT = true;</script>\n<script>${heicIife}</script>\n<script type="module">\n${appA}</script>`);
   const page = `<title>FotoVende</title>\n<meta name="theme-color" content="#14161c">\n<style>\n${r('./style.css')}</style>\n${body}`;
