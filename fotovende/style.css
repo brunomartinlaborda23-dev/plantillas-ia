@@ -232,3 +232,5 @@ select, .form input {
 .site-actions .btn { font-size: 14px; padding: 9px 10px; text-decoration: none; }
 .form input, .form select { width: 100%; min-width: 0; }
 .copyrow output { min-width: 0; overflow-wrap: anywhere; }
+
+#studioChips i { width: 22px; height: 22px; border-radius: 6px; background-size: cover; }

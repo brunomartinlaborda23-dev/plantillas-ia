@@ -312,7 +312,142 @@ function source(p, useCut, size) {
   return p.cache.get(key);
 }
 
+/* ---------- fondos de estudio (generados a la resolución exacta de cada foto) ---------- */
+
+const STUDIOS = {
+  'studio-white': { name: 'Estudio blanco', kind: 'sweep', wall: [247, 246, 243], floor: [231, 229, 225] },
+  'studio-grey': { name: 'Estudio gris', kind: 'sweep', wall: [216, 216, 212], floor: [190, 190, 186] },
+  'studio-sand': { name: 'Estudio arena', kind: 'sweep', wall: [238, 228, 213], floor: [218, 204, 184] },
+  'studio-rose': { name: 'Estudio rosa', kind: 'sweep', wall: [245, 224, 218], floor: [229, 199, 191] },
+  'studio-sky': { name: 'Estudio azul', kind: 'sweep', wall: [222, 231, 239], floor: [197, 211, 224] },
+  'studio-dark': { name: 'Estudio oscuro', kind: 'sweep', wall: [58, 58, 62], floor: [40, 40, 44] },
+  marble: { name: 'Mármol', kind: 'marble' },
+  wood: { name: 'Madera', kind: 'wood' },
+  linen: { name: 'Lino', kind: 'linen' },
+};
+const isSweep = (bg) => STUDIOS[bg]?.kind === 'sweep';
+
+// ruido suave (value noise + fbm) para texturas naturales
+function hash2(x, y, seed) {
+  let h = (x * 374761393 + y * 668265263 + seed * 2147483647) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+function vnoise(x, y, seed) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi, seed), b = hash2(xi + 1, yi, seed), c = hash2(xi, yi + 1, seed), d = hash2(xi + 1, yi + 1, seed);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function fbm(x, y, seed, oct = 5) {
+  let sum = 0, amp = 0.5, f = 1;
+  for (let o = 0; o < oct; o++) { sum += amp * vnoise(x * f, y * f, seed + o * 17); f *= 2; amp *= 0.5; }
+  return sum / (1 - Math.pow(0.5, oct));
+}
+
+function studioTexture(kind, W, H) {
+  // las texturas se calculan a ~1200 px y se amplían suavemente; el grano fino se añade luego a resolución completa
+  const k = Math.min(1, 1200 / Math.max(W, H));
+  const w = Math.max(16, Math.round(W * k)), h = Math.max(16, Math.round(H * k));
+  const c = makeCanvas(w, h);
+  const x = ctx2d(c);
+  const img = x.createImageData(w, h);
+  const d = img.data;
+  const sc = 1 / Math.max(w, h);
+  for (let py = 0; py < h; py++) {
+    for (let px = 0; px < w; px++) {
+      const u = px * sc, v = py * sc, i = (py * w + px) * 4;
+      let r, g, b;
+      if (kind === 'marble') {
+        const t = fbm(u * 5, v * 5, 3, 6);
+        const vein = Math.abs(Math.sin((u * 2.2 + v * 3.1) * 6 + t * 9));
+        const fine = Math.abs(Math.sin((u * 4.1 - v * 1.7) * 9 + fbm(u * 9, v * 9, 7, 5) * 7));
+        const dark = Math.pow(1 - vein, 10) * 0.30 + Math.pow(1 - fine, 40) * 0.09;
+        const cloud = (fbm(u * 2.5, v * 2.5, 11, 4) - 0.5) * 0.06;
+        r = 243 - dark * 120 + cloud * 255; g = 241 - dark * 118 + cloud * 255; b = 237 - dark * 112 + cloud * 255;
+      } else if (kind === 'wood') {
+        const plank = Math.floor(u * 5.2);
+        const tone = (hash2(plank, 1, 5) - 0.5) * 0.12;
+        const grain = fbm(u * 60 + plank * 3.1, v * 4, 13 + plank, 5);
+        const ring = Math.sin((u * 5.2 - plank) * 40 + grain * 10) * 0.5 + 0.5;
+        const seam = Math.min(1, Math.abs((u * 5.2 - plank) - 0.5) * 2) > 0.985 ? 0.75 : 1;
+        const lum = (0.86 + tone - ring * 0.06 - (grain - 0.5) * 0.12) * seam;
+        r = 222 * lum; g = 190 * lum; b = 150 * lum;
+      } else {
+        // lino: trama fina de hilos + irregularidad
+        const n = fbm(u * 30, v * 30, 21, 3) - 0.5;
+        const warp = Math.sin(px * 1.9 + n * 3) * 0.5 + 0.5, weft = Math.sin(py * 1.9 + n * 3) * 0.5 + 0.5;
+        const lum = 0.93 + (warp * weft - 0.25) * 0.08 + n * 0.04 + (fbm(u * 4, v * 4, 31, 3) - 0.5) * 0.025;
+        r = 233 * lum; g = 225 * lum; b = 210 * lum;
+      }
+      d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = 255;
+    }
+  }
+  x.putImageData(img, 0, 0);
+  return c;
+}
+
+const studioCache = new Map();
+function studioCanvas(bg, W, H) {
+  const key = `${bg}|${W}|${H}`;
+  if (studioCache.has(key)) return studioCache.get(key);
+  const S = STUDIOS[bg];
+  const c = makeCanvas(W, H);
+  const x = ctx2d(c);
+  if (S.kind === 'sweep') {
+    // fondo infinito de estudio: pared, curva suave hacia el suelo, foco de luz y viñeta
+    const img = x.createImageData(W, H);
+    const d = img.data;
+    const horizon = 0.66, soft = 0.16;
+    const lx = W * 0.5, ly = H * 0.42, R = Math.hypot(W, H) * 0.62;
+    for (let y = 0; y < H; y++) {
+      const t = (y / H - (horizon - soft / 2)) / soft;
+      const m = t <= 0 ? 0 : t >= 1 ? 1 : t * t * (3 - 2 * t);
+      const br = S.wall[0] + (S.floor[0] - S.wall[0]) * m;
+      const bgc = S.wall[1] + (S.floor[1] - S.wall[1]) * m;
+      const bb = S.wall[2] + (S.floor[2] - S.wall[2]) * m;
+      for (let xx = 0; xx < W; xx++) {
+        const dist = Math.hypot(xx - lx, (y - ly) * 1.15) / R;
+        const light = 1 + 0.055 * Math.max(0, 1 - dist * 1.6) - 0.11 * Math.pow(Math.min(1, dist), 2.2);
+        const grain = (hash2(xx, y, 99) - 0.5) * 3;
+        const i = (y * W + xx) * 4;
+        d[i] = br * light + grain; d[i + 1] = bgc * light + grain; d[i + 2] = bb * light + grain; d[i + 3] = 255;
+      }
+    }
+    x.putImageData(img, 0, 0);
+  } else {
+    drawSmooth(x, studioTexture(S.kind, W, H), 0, 0, W, H);
+    // luz suave de ventana desde arriba a la izquierda + grano fino
+    const gr = x.createRadialGradient(W * 0.3, H * 0.2, 0, W * 0.3, H * 0.2, Math.hypot(W, H) * 0.9);
+    gr.addColorStop(0, 'rgba(255,255,255,.10)');
+    gr.addColorStop(1, 'rgba(0,0,0,.10)');
+    x.fillStyle = gr;
+    x.fillRect(0, 0, W, H);
+    const img = x.getImageData(0, 0, W, H), d = img.data;
+    for (let i = 0, j = 0; i < d.length; i += 4, j++) {
+      const g = (hash2(j % W, (j / W) | 0, 77) - 0.5) * 4;
+      d[i] += g; d[i + 1] += g; d[i + 2] += g;
+    }
+    x.putImageData(img, 0, 0);
+  }
+  if (studioCache.size > 5) studioCache.clear();
+  studioCache.set(key, c);
+  return c;
+}
+
+function studioSwatches() {
+  for (const b of $$('[data-bg]')) {
+    if (!STUDIOS[b.dataset.bg]) continue;
+    const i = b.querySelector('i');
+    if (i) i.style.backgroundImage = `url(${studioCanvas(b.dataset.bg, 64, 64).toDataURL()})`;
+  }
+}
+
 function paintBackground(x, W, H, p, s, size) {
+  if (STUDIOS[s.bg]) {
+    x.drawImage(studioCanvas(s.bg, W, H), 0, 0);
+    return;
+  }
   if (s.bg === 'blur') {
     const src = source(p, false, size);
     const tiny = makeCanvas(Math.max(8, W / 28), Math.max(8, H / 28));
@@ -346,7 +481,25 @@ function render(p, size, original = false) {
     const x = ctx2d(out);
     paintBackground(x, W, H, p, s, size);
     let sc = W / subj.width, dx = 0, dy = 0;
-    if (ratio) {
+    const sweep = isSweep(s.bg);
+    if (sweep) {
+      // en un estudio la prenda se apoya en el suelo, con sombra de contacto
+      const bb = bbox(subj), floorY = H * 0.885;
+      sc = Math.min((W * 0.84) / bb.w, (H * 0.76) / bb.h);
+      dx = W / 2 - (bb.x + bb.w / 2) * sc;
+      dy = floorY - (bb.y + bb.h) * sc;
+      const rx = bb.w * sc * 0.46, ry = H * 0.022;
+      x.save();
+      x.translate(W / 2, floorY);
+      x.scale(1, ry / rx);
+      const g = x.createRadialGradient(0, 0, 0, 0, 0, rx);
+      g.addColorStop(0, 'rgba(0,0,0,.30)');
+      g.addColorStop(0.6, 'rgba(0,0,0,.12)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = g;
+      x.fillRect(-rx, -rx, rx * 2, rx * 2);
+      x.restore();
+    } else if (ratio) {
       // centra la prenda dejando un margen
       const bb = bbox(subj), m = 0.07;
       sc = Math.min((W * (1 - 2 * m)) / bb.w, (H * (1 - 2 * m)) / bb.h);
@@ -355,9 +508,9 @@ function render(p, size, original = false) {
     }
     x.save();
     if (s.shadow && s.bg !== 'blur') {
-      x.shadowColor = 'rgba(0,0,0,.26)';
-      x.shadowBlur = W * 0.03;
-      x.shadowOffsetY = W * 0.012;
+      x.shadowColor = sweep ? 'rgba(0,0,0,.18)' : 'rgba(0,0,0,.26)';
+      x.shadowBlur = W * (sweep ? 0.04 : 0.03);
+      x.shadowOffsetY = W * (sweep ? 0.008 : 0.012);
     }
     drawSmooth(x, subj, dx, dy, subj.width * sc, subj.height * sc);
     x.restore();
@@ -724,7 +877,7 @@ function syncControls() {
   const s = p.s;
   $('#auto').checked = s.auto;
   $$('.slider input').forEach((r) => (r.value = s[r.dataset.k]));
-  $$('#bgChips button').forEach((b) => b.classList.toggle('on', b.dataset.bg === s.bg));
+  $$('#bgChips button, #studioChips button').forEach((b) => b.classList.toggle('on', b.dataset.bg === s.bg));
   $$('#fmtChips button').forEach((b) => b.classList.toggle('on', b.dataset.fmt === s.format));
   $('#bgExtra').hidden = s.bg === 'original';
   $('#bgColor').value = s.bgColor;
@@ -856,10 +1009,10 @@ async function shareAll() {
 
 const PLATFORMS = {
   vinted: {
-    name: 'Vinted', format: '3:4', bg: 'white',
+    name: 'Vinted', format: '3:4', bg: 'studio-white',
     url: () => `https://www.vinted.${country.value}/items/new`,
     why: 'La app nº 1 para ropa de segunda mano en España y Europa. Sin comisión para quien vende.',
-    fondo: 'Fondo blanco o claro y liso, en vertical 3:4 (como se ve en la app).',
+    fondo: 'Estudio blanco o claro, en vertical 3:4 (como se ve en la app).',
     tips: ['Portada: la prenda entera de frente, centrada.', 'Después: detrás, etiqueta, talla, detalles y defectos.', 'Título con lo que la gente busca: tipo + marca + talla.'],
     desc: 'Lista clara: marca, talla, estado, medidas y defectos.',
   },
@@ -872,10 +1025,10 @@ const PLATFORMS = {
     desc: 'Corta y directa, con forma de entrega.',
   },
   depop: {
-    name: 'Depop', format: '1:1', bg: 'color',
+    name: 'Depop', format: '1:1', bg: 'studio-rose',
     url: () => 'https://www.depop.com/products/create/',
     why: 'La favorita para vintage, streetwear y estilo Y2K; público joven.',
-    fondo: 'Cuadrada con fondo de color suave o foto puesta: aquí se vende el estilo.',
+    fondo: 'Cuadrada con estudio de color suave (rosa, azul), mármol o madera: aquí se vende el estilo.',
     tips: ['Primera foto con estilo: puesta o con un fondo de color.', 'Usa hasta 5 hashtags (#vintage #y2k…).', 'Indica cómo queda: oversize, ajustada, largo…'],
     desc: 'Con estilo y hashtags al final.',
   },
@@ -1036,7 +1189,8 @@ for (const id of ['#nativeCam', '#gallery']) {
 
 $$('.slider input').forEach((r) => (r.oninput = () => changed((s) => (s[r.dataset.k] = Number(r.value)))));
 $('#auto').onchange = (e) => changed((s) => (s.auto = e.target.checked));
-$$('#bgChips button').forEach((b) => (b.onclick = () => setBg(b.dataset.bg)));
+$$('#bgChips button, #studioChips button').forEach((b) => (b.onclick = () => setBg(b.dataset.bg)));
+studioSwatches();
 $('#bgColor').oninput = (e) => changed((s) => { s.bgColor = e.target.value; s.bg = 'color'; });
 $('#shadow').onchange = (e) => changed((s) => (s.shadow = e.target.checked));
 $$('#fmtChips button').forEach((b) => (b.onclick = () => changed((s) => (s.format = b.dataset.fmt))));
