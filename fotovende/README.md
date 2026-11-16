@@ -36,6 +36,11 @@ y abre <http://localhost:8080>.
 el enlace en el móvil y pulsar "Añadir a pantalla de inicio" para tenerla como una app. Los botones
 "Cámara del móvil" y "Galería" funcionan incluso sin https.
 
+## Versión en un solo archivo
+
+`FotoVende.html` lleva todo dentro (estilos, código y la librería de recorte). Se regenera con
+`node fotovende/build-single.mjs` después de cambiar la app.
+
 ## Archivos
 
 - `index.html`, `style.css`, `app.js` — la app (sin dependencias, sin compilar).
