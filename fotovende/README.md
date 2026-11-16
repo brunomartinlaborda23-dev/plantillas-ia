@@ -47,3 +47,4 @@ el enlace en el móvil y pulsar "Añadir a pantalla de inicio" para tenerla como
 - `vendor/background-removal.mjs` — librería de recorte con IA [@imgly/background-removal](https://github.com/imgly/background-removal-js)
   1.7.0 empaquetada (licencia AGPL, ver `vendor/LICENSE-background-removal.md`; bien para uso personal). El modelo y
   los archivos wasm se descargan de `staticimgly.com` la primera vez.
+- `vendor/heic2any.mjs` — [heic2any](https://github.com/alexcorvi/heic2any) (MIT) para abrir fotos HEIC de iPhone/Samsung.

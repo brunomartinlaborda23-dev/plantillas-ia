@@ -78,16 +78,68 @@ function cropCenter(src, ratio) {
   return c;
 }
 
-async function loadImage(blob) {
-  const url = URL.createObjectURL(blob);
-  try {
+function loadVia(url) {
+  return new Promise((res, rej) => {
     const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = () => rej(new Error('img'));
     img.src = url;
-    await img.decode();
-    return img;
-  } finally {
-    URL.revokeObjectURL(url);
+  });
+}
+
+const readAsDataURL = (blob) => new Promise((res, rej) => {
+  const r = new FileReader();
+  r.onload = () => res(r.result);
+  r.onerror = () => rej(r.error);
+  r.readAsDataURL(blob);
+});
+
+// Comprueba que la imagen se puede dibujar y leer (algunos navegadores la "bloquean" al abrir la página como archivo).
+function usable(src) {
+  const [w, h] = dims(src);
+  if (!w || !h) return false;
+  const c = makeCanvas(1, 1);
+  const x = ctx2d(c);
+  x.drawImage(src, 0, 0, 1, 1);
+  x.getImageData(0, 0, 1, 1);
+  return true;
+}
+
+async function isHeic(blob) {
+  if (/hei[cf]/i.test(blob.type) || /\.hei[cf]$/i.test(blob.name || '')) return true;
+  const head = new TextDecoder().decode(await blob.slice(4, 12).arrayBuffer());
+  return /^ftyp(heic|heix|hevc|hevx|heim|heis|mif1|msf1)/.test(head);
+}
+
+let heicModule = null;
+async function heicToJpeg(blob) {
+  heicModule ||= import('./vendor/heic2any.mjs');
+  const heic2any = (await heicModule).default;
+  const out = await heic2any({ blob, toType: 'image/jpeg', quality: 0.95 });
+  return Array.isArray(out) ? out[0] : out;
+}
+
+// Abre una imagen probando varios métodos, porque cada móvil/navegador falla en uno distinto.
+async function loadImage(blob, allowHeic = true) {
+  const tries = [
+    async () => {
+      const url = URL.createObjectURL(blob);
+      try { return await loadVia(url); } finally { setTimeout(() => URL.revokeObjectURL(url), 1000); }
+    },
+    async () => createImageBitmap(blob, { imageOrientation: 'from-image' }),
+    async () => createImageBitmap(blob),
+    async () => loadVia(await readAsDataURL(blob)),
+  ];
+  for (const t of tries) {
+    try {
+      const img = await t();
+      if (usable(img)) return img;
+    } catch (e) {
+      console.warn('loadImage', e);
+    }
   }
+  if (allowHeic && (await isHeic(blob))) return loadImage(await heicToJpeg(blob), false);
+  throw new Error('formato');
 }
 
 const toBlob = (c, type = 'image/jpeg', q = 0.92) =>
@@ -358,16 +410,20 @@ function updateBusy() {
 
 async function addPhoto(blob) {
   try {
+    if (await isHeic(blob).catch(() => false)) toast('Convirtiendo foto HEIC…');
     const img = await loadImage(blob);
     const src = scaled(img, MAX_SRC);
-    const thumb = scaled(src, 240).toDataURL('image/jpeg', 0.8);
+    img.close?.();
+    let thumb;
+    try { thumb = scaled(src, 240).toDataURL('image/jpeg', 0.8); } catch { thumb = ''; }
     const p = { id: nextId++, src, thumb, cutout: null, s: { ...DEFAULTS } };
     state.photos.push(p);
     if (!state.sel) state.sel = p;
     renderStrips();
   } catch (e) {
     console.error(e);
-    toast('No se pudo abrir esa imagen.');
+    const kind = blob.type || (blob.name || '').split('.').pop() || 'desconocido';
+    toast(`No se pudo abrir la imagen (${kind}). Prueba desde "Galería" o haz la foto otra vez.`);
   }
 }
 
