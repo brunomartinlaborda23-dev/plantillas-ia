@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14161c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>FotoVende</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><img src="icon.svg" alt=""> FotoVende</div>
+    <nav class="steps" aria-label="Pasos">
+      <button class="step active" data-step="capturar"><b>1</b> Fotos</button>
+      <button class="step" data-step="mejorar" disabled><b>2</b> Mejorar</button>
+      <button class="step" data-step="publicar" disabled><b>3</b> Publicar</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- ============ 1. SACAR FOTOS ============ -->
+    <section id="capturar" class="panel active">
+      <div class="camera" id="camera">
+        <video id="video" playsinline muted></video>
+        <div class="grid-overlay" aria-hidden="true"></div>
+        <div class="flash" id="flash"></div>
+        <div class="cam-off" id="camOff">
+          <p>Haz las fotos de tu prenda aquí mismo</p>
+          <button class="btn primary big" id="startCam">📷 Activar cámara</button>
+          <small>o usa los botones de abajo</small>
+        </div>
+        <div class="cam-controls" id="camControls" hidden>
+          <button class="round" id="torch" title="Linterna" hidden>🔦</button>
+          <button class="shutter" id="shutter" aria-label="Hacer foto"></button>
+          <button class="round" id="flip" title="Cambiar cámara">🔄</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <label class="btn">📱 Cámara del móvil
+          <input type="file" accept="image/*" capture="environment" id="nativeCam" hidden>
+        </label>
+        <label class="btn">🖼️ Desde la galería
+          <input type="file" accept="image/*" multiple id="gallery" hidden>
+        </label>
+      </div>
+
+      <h3 class="label">Tus fotos <span id="count">(0)</span></h3>
+      <div class="strip" id="captureStrip"><p class="empty">Aún no hay fotos. La primera será la portada del anuncio.</p></div>
+
+      <details class="tips">
+        <summary>💡 Consejos para que se venda antes</summary>
+        <ul>
+          <li><b>Luz natural</b> cerca de una ventana, sin flash.</li>
+          <li><b>Fondo liso</b> (pared, sábana, suelo claro). Aunque lo puedes cambiar luego.</li>
+          <li>Prenda <b>estirada y sin arrugas</b>, en percha o sobre la cama.</li>
+          <li>Haz: <b>delante, detrás, etiqueta, talla, detalles</b> y cualquier <b>defecto</b>.</li>
+          <li>Si puedes, una foto <b>puesta</b> (o en maniquí) ayuda mucho.</li>
+        </ul>
+      </details>
+
+      <button class="btn primary next" id="toEdit" disabled>Listo, mejorar fotos →</button>
+    </section>
+
+    <!-- ============ 2. MEJORAR ============ -->
+    <section id="mejorar" class="panel">
+      <div class="editor">
+        <div class="preview-wrap">
+          <canvas id="preview"></canvas>
+          <div class="busy" id="busy" hidden><div class="spinner"></div><p id="busyText">Procesando…</p></div>
+          <button class="compare" id="compare">Mantén para ver el original</button>
+        </div>
+        <div class="strip small" id="editStrip"></div>
+
+        <div class="controls">
+          <div class="group">
+            <div class="group-head">
+              <h3>✨ Calidad</h3>
+              <label class="switch"><input type="checkbox" id="auto" checked><span>Auto-mejora</span></label>
+            </div>
+            <label class="slider">Brillo <input type="range" min="-100" max="100" value="0" data-k="brightness"></label>
+            <label class="slider">Contraste <input type="range" min="-100" max="100" value="0" data-k="contrast"></label>
+            <label class="slider">Color <input type="range" min="-100" max="100" value="0" data-k="saturation"></label>
+            <label class="slider">Calidez <input type="range" min="-100" max="100" value="0" data-k="warmth"></label>
+            <label class="slider">Nitidez <input type="range" min="0" max="100" value="35" data-k="sharpness"></label>
+          </div>
+
+          <div class="group">
+            <div class="group-head"><h3>🎨 Fondo</h3><small id="bgHint">La IA recorta la prenda (la 1ª vez descarga ~45 MB)</small></div>
+            <div class="chips" id="bgChips">
+              <button data-bg="original" class="on">Original</button>
+              <button data-bg="white"><i style="background:#fff"></i>Blanco</button>
+              <button data-bg="grey"><i style="background:#eceae6"></i>Gris claro</button>
+              <button data-bg="color"><i id="bgSwatch" style="background:#f3dfd4"></i>Color</button>
+              <button data-bg="blur"><i class="blurdot"></i>Desenfocado</button>
+            </div>
+            <div class="row tight" id="bgExtra" hidden>
+              <label class="color">Color: <input type="color" id="bgColor" value="#f3dfd4"></label>
+              <label class="switch"><input type="checkbox" id="shadow" checked><span>Sombra suave</span></label>
+            </div>
+          </div>
+
+          <div class="group">
+            <div class="group-head"><h3>📐 Formato</h3></div>
+            <div class="chips" id="fmtChips">
+              <button data-fmt="3:4" class="on">3:4 (Vinted)</button>
+              <button data-fmt="1:1">Cuadrada</button>
+              <button data-fmt="4:5">4:5</button>
+              <button data-fmt="original">Original</button>
+            </div>
+            <div class="row tight">
+              <button class="btn" id="rotL">⟲ Girar</button>
+              <button class="btn" id="rotR">⟳ Girar</button>
+              <button class="btn danger" id="delPhoto">🗑 Quitar</button>
+            </div>
+          </div>
+
+          <div class="row">
+            <button class="btn" id="applyAll">Aplicar a todas</button>
+            <button class="btn" id="reset">Restablecer</button>
+          </div>
+        </div>
+      </div>
+      <button class="btn primary next" id="toPublish">Listo, preparar para vender →</button>
+    </section>
+
+    <!-- ============ 3. PUBLICAR ============ -->
+    <section id="publicar" class="panel">
+      <h2>Tus fotos están listas</h2>
+      <p class="muted">Ordénalas con las flechas: la primera es la portada.</p>
+      <div class="finals" id="finals"></div>
+
+      <div class="row">
+        <button class="btn primary" id="share">📲 Guardar / compartir fotos</button>
+        <button class="btn" id="download">⬇️ Descargar todas</button>
+      </div>
+
+      <div class="group">
+        <h3>🛍️ Súbelas a tu tienda</h3>
+        <ol class="howto">
+          <li>Pulsa <b>Guardar / compartir</b> y elige <i>Guardar imágenes</i> (o compártelas directamente con la app).</li>
+          <li>Abre la app donde vendes y crea el anuncio.</li>
+          <li>Elige las fotos de tu galería — ya están en el orden y formato correctos.</li>
+        </ol>
+        <div class="row tight">
+          <label class="color">País de Vinted:
+            <select id="vintedCountry">
+              <option value="es">España</option><option value="fr">Francia</option><option value="it">Italia</option>
+              <option value="pt">Portugal</option><option value="de">Alemania</option><option value="be">Bélgica</option>
+              <option value="nl">Países Bajos</option><option value="co.uk">Reino Unido</option>
+            </select>
+          </label>
+        </div>
+        <div class="stores">
+          <a class="store" id="goVinted" target="_blank" rel="noopener">Vinted<small>Subir artículo</small></a>
+          <a class="store" href="https://es.wallapop.com/app/catalog/upload" target="_blank" rel="noopener">Wallapop<small>Subir producto</small></a>
+          <a class="store" href="https://www.ebay.es/sl/sell" target="_blank" rel="noopener">eBay<small>Vender</small></a>
+          <a class="store" href="https://www.milanuncios.com/publicar-anuncios-gratis/" target="_blank" rel="noopener">Milanuncios<small>Publicar</small></a>
+        </div>
+      </div>
+
+      <details class="group desc">
+        <summary><h3>📝 Ayuda con el título y la descripción</h3></summary>
+        <div class="form">
+          <label>Qué es <input id="dQue" placeholder="Chaqueta vaquera"></label>
+          <label>Marca <input id="dMarca" placeholder="Levi's"></label>
+          <label>Talla <input id="dTalla" placeholder="M"></label>
+          <label>Color <input id="dColor" placeholder="Azul claro"></label>
+          <label>Estado
+            <select id="dEstado">
+              <option>Nuevo con etiquetas</option><option>Nuevo sin etiquetas</option>
+              <option selected>Muy bueno</option><option>Bueno</option><option>Satisfactorio</option>
+            </select>
+          </label>
+          <label>Medidas <input id="dMedidas" placeholder="Largo 60 cm, axila a axila 50 cm"></label>
+          <label class="wide">Detalles <input id="dNotas" placeholder="Usada 2 veces, sin defectos"></label>
+        </div>
+        <label class="label">Título</label>
+        <div class="copyrow"><output id="outTitle"></output><button class="btn" data-copy="outTitle">Copiar</button></div>
+        <label class="label">Descripción</label>
+        <div class="copyrow"><output id="outDesc" class="multi"></output><button class="btn" data-copy="outDesc">Copiar</button></div>
+      </details>
+
+      <button class="btn next" id="newItem">＋ Empezar otro artículo</button>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" hidden></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
